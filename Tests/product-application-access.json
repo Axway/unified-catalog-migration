@@ -1,0 +1,16 @@
+{
+  "title": "Something temporary",
+  "product": {
+    "id": "pdt-1",
+    "version": {
+      "id": "pdt-v-1"
+    }
+  },
+  "assetResource": {
+    "id": "ares-1"
+  },
+  "subscription": {
+    "id": "sub-1"
+  },
+  "data": {}
+}

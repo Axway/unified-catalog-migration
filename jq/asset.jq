@@ -18,6 +18,6 @@
 	"access": {
         "approval": "automatic"
     },
-    "icon": "data:image/png;base64,__iconBase64__",
+    "icon": $icon,
 	"state": "draft"
 }

@@ -1,0 +1,13 @@
+{
+  "errors" : [ {
+    "status" : 400,
+    "title" : "Validation error",
+    "detail" : "HTTP 400 Bad Request",
+    "meta" : {
+      "instanceId" : "e4f77cd969cdaf3a0169d9f8a61d1201",
+      "tenantId" : "889336692462686",
+      "authenticatedUserId" : "d94023e5-cee8-416c-8021-cebb7ac3e648",
+      "transactionId" : "c6467bf8-1dd0-4290-9d0c-71670b319428"
+    }
+  } ]
+}

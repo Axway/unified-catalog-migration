@@ -10,13 +10,10 @@
             }
         ],
         "categories": [],
-        "autoRelease": {
-            "releaseType": "patch"
-        },
         "description": $description
     },
 	"tags": [
 		"Migrated from Unified Catalog"
 	],
-    "icon": "data:image/png;base64,__iconBase64__",
+    "icon": $icon,
 }

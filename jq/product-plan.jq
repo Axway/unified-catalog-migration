@@ -14,7 +14,7 @@
         length: 1
       },
       renewal: "automatic",
-      approval: "manual"
+      approval: $approvalMode
     }
   },
   state: "draft"

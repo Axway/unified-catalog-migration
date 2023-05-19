@@ -41,4 +41,3 @@ An environment file is available in config directory to setup some properties:
 * Categories
 * add owner of Asset / Product & Plan based on the service owner.
 * add the sharing of catalog?
-* catalog documentation?

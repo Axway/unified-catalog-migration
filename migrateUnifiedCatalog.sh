@@ -42,19 +42,20 @@ function migrate() {
 	else
 		# migrate a single entity
 		echo "Reading $INPUT_TITLE Unified Catalog item from its title..."
-#		axway central get consumeri -q "title=='$INPUT_TITLE'" -o json > $TEMP_DIR/$TEMP_FILE
+		axway central get consumeri -q "title=='$INPUT_TITLE'" -o json > $TEMP_DIR/$TEMP_FILE
 	fi
 	error_exit "Cannot read catalog items"
 
 	echo "Found " `cat $TEMP_DIR/$TEMP_FILE | jq '.|length'` " catalog items to migrate."
 
-	# loop over the result and keep interesting data (name / description / API Service / Tags / Environment)
-	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, description: .spec.description, apiserviceName: .references.apiService, tags: .tags, environment: .metadata.scope.name}" | while IFS= read -r line ; do
+	# loop over the result and keep interesting data (name / description / API Service / Tags / Environment / Owner)
+	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, description: .spec.description, apiserviceName: .references.apiService, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
 
 		CONSUMER_INSTANCE_ID=$(echo $line | jq -r '.id')
 		CONSUMER_INSTANCE_NAME=$(echo $line | jq -r '.name')
 		CONSUMER_INSTANCE_TITLE=$(echo $line | jq -r '.title')
 		CONSUMER_INSTANCE_DESCRIPTION=$(echo $line | jq -r '.description')
+		CONSUMER_INSTANCE_OWNER_ID=$(echo $line | jq -r '.ownerId')
 		CATALOG_APISERVICE=$(echo $line | jq -r '.apiserviceName')
 		CATALOG_APISERVICEENV=$(echo $line | jq -r '.environment')
 		CATALOG_TAGS=$(echo $line | jq -r '.tags')
@@ -71,7 +72,7 @@ function migrate() {
 		URL=${URL// /%20}
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 		CATALOG_ID=`cat $TEMP_DIR/catalogItem.json | jq -r ".[0] | .id"`
-		echo "			CatID=$CATALOG_ID"
+		#echo "			CatID=$CATALOG_ID"
 
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription' 
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
@@ -94,7 +95,15 @@ function migrate() {
 
 		# creating asset in Central
 		echo "	creating asset file..."
-		jq -n -f ./jq/asset.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+		if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+		then
+			echo "		without owner"
+			jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+		else
+			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+			jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+
+		fi
 		error_exit "Problem when creating asset file" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
 
 		# adding tags .... TODO
@@ -121,8 +130,14 @@ function migrate() {
 
 		# create the corresponding product
 		echo "	creating product file..." 
-		jq -n -f ./jq/product.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-
+		if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+		then
+			echo "		without owner"
+			jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+		else
+			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+			jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+		fi
 		echo "	Posting product to Central..."
 		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json
 		error_exit "Problem creating product" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json"
@@ -156,7 +171,14 @@ function migrate() {
 
 		#  Create a Product Plan (Free)
 		echo "	Adding Free plan..." 
-		jq -n -f ./jq/product-plan.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
+		if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+		then
+			echo "		without owner"
+			jq -n -f ./jq/product-plan-create.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
+		else
+			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+			jq -n -f ./jq/product-plan-create-owner.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
+		fi
 		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json
 		error_exit "Problem when creating a Product plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json"
 
@@ -204,7 +226,14 @@ function migrate() {
 				MARKETPLACE_NAME=$(echo $lineMp | jq -r '.name')
 				
 				echo "		Publishing $PRODUCT_NAME to Marketplace $MARKETPLACE_TITLE ($MARKETPLACE_NAME)..."
-				jq -n -f ./jq/product-publish.jq --arg marketplace_name $MARKETPLACE_NAME --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
+				if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+				then
+					echo "		without owner"
+					jq -n -f ./jq/product-publish-create.jq --arg marketplace_name $MARKETPLACE_NAME --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
+				else
+					echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+					jq -n -f ./jq/product-publish-create-owner.jq --arg marketplace_name $MARKETPLACE_NAME --arg product_name $PRODUCT_NAME  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
+				fi
 				axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json
 				error_exit "Problem with pubishing a Product on Marketplace" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json"
 				echo "		$PRODUCT_NAME published to Marketplace $MARKETPLACE_TITLE"
@@ -312,7 +341,7 @@ function migrate() {
 		
 		# clean up current loop...
 		echo "	cleaning temp files..."
-		rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
+		#rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
 
 	done # loop over catalog itesm
 

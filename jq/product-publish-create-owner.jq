@@ -2,15 +2,19 @@
     group: "catalog",
     apiVersion: "v1alpha1",
     kind: "PublishedProduct",
+    "owner": {
+        "type": "team",
+        "id": $teamId,
+    },
     metadata: {
         scope: {
             kind: "Marketplace",
-            name: .[0][0].name,
+            name: $marketplace_name,
         }
     },
     spec: {
         product: {
-            name: .[1][0].name
+            name: $product_name
         }
     }
 }

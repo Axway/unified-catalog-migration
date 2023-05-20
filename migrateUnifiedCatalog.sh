@@ -341,7 +341,7 @@ function migrate() {
 		
 		# clean up current loop...
 		echo "	cleaning temp files..."
-		#rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
+		rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
 
 	done # loop over catalog itesm
 

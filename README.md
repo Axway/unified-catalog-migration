@@ -30,6 +30,35 @@ An environment file is available in config directory to setup some properties:
 * PLAN_QUOTA to set the default plan quota
 * PUBLISH_TO_MARKETPLACES to know if products need to be publish to marketplace
 
+## Mapping Unified Catalog => Marketplace
+
+Initial Object             =>             Target Objects
+
+ConsumerInstance                        Asset               Product                Marketplace Subscription         Marketplace Application
+    - Id
+    - name
+    - title                             Title               Title
+    - Description                       Description         Description
+    - API Service                       APIService
+
+APIService
+    - icon: not used
+
+APIServiceInstance
+    - CredentialRequestDefinition
+    - AccessRequestDefinition
+  
+CatalogItem (= consumerInstance)
+    - image/base64                      Icon                Icon
+  
+CatalogItemDocumentation
+    - value                                                 Article
+
+Subscription
+    - name                                                                         Name
+    - Application Name (if available)                                                                               Name
+    - OwingTeam                                                                    owingTeam                        owningTeam
+
 ## Usage
 
 ```bash

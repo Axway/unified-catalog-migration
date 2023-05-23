@@ -64,11 +64,9 @@ function create_stage_if_not_exist() {
 ##########################################################
 function getFromMarketplace() {
 
-	urlPath=$1
-	URL=$MARKETPLACE_URL$urlPath
-	#echo "url for MP = "$URL
+	#echo "url for MP = "$1
 
-	curl -s -k -L ${URL} -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/getFromMarketplaceResult.json
+	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/getFromMarketplaceResult.json
 
 	if [[ $2 == "" ]]
 	then
@@ -95,10 +93,8 @@ function postToMarketplace() {
 		outputFile=$3
 	fi
 
-	URL=$MARKETPLACE_URL$1
-	#echo "url for MP = "$URL
-	#echo "curl -s -k -L ${URL} -H "Content-Type: application/json" --header 'Authorization: Bearer '$PLATFORM_TOKEN -d cat $2"
-	curl -s -k -L ${URL} -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN -d "`cat $2`" > $outputFile
+	#echo "url for MP = "$1
+	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN -d "`cat $2`" > $outputFile
 
 	cat $outputFile
 }
@@ -124,4 +120,96 @@ function readCatalogDocumentationFromItsId() {
 	# replace \n with newline
 	sed 's/\\n/\'$'\n''/g' <<< $DOC_TEMP > $TEMP_DIR/catalogItemDocumentationCleaned.txt
 	cat $TEMP_DIR/catalogItemDocumentationCleaned.txt
+}
+
+
+###########################################################################
+# Read Marketplace Information (guid/url/subdomain)                       #
+#                                                                         #
+# INPUT: $MARKETPLACE_TITLE                                               #
+# OUTPUT: json with:                                                      #
+# {"guid": "guidValue", "url": "urlValue", "subdomain": "subDomainValue"} #
+###########################################################################
+function readMarketplaceInformation {
+	# Get catalog documentation property
+	URL='https://platform.axway.com/api/v1/provider?org_guid='$PLATFORM_ORGID
+
+	curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/marketplaceList.json
+
+	MP_INFO=`cat $TEMP_DIR/marketplaceList.json | jq -rc '.result[] | select(.name == env.MARKETPLACE_TITLE)' | jq -rc '{guid: .guid, url: .url, subdomain: .subdomain}'`
+	echo $MP_INFO
+}
+
+###################################################
+# Retrieve the Marketplace guid based on its name #
+#                                                 #
+# OUTPUT: marketaplce guid                        #
+###################################################
+function readMarketplaceGuidFromMarketplaceName {
+	MP_INFO=$(readMarketplaceInformation)
+
+	MP_GUID=`echo $MP_INFO | jq -rc '.guid'`
+	echo $MP_GUID
+}
+
+##################################################
+# Retrieve the Marketplace URL based on its name #
+#                                                #
+# OUTPUT: marketaplce url                        #
+##################################################
+function readMarketplaceUrlFromMarketplaceName {
+
+	MP_INFO=$(readMarketplaceInformation)
+
+	VANITY_URL=`echo $MP_INFO | jq -rc '.url'`
+
+	# is it a vanity url?
+	if [[ $VANITY_URL != null ]]
+	then 
+		# yes
+		RESULT=`echo "https://$VANITY_URL"`
+	else
+		# no, need to build the url based on subdomain and region
+		SUBDOMAIN=`echo $MP_INFO | jq -rc '.subdomain'`
+
+		if [[ $ORGANIZATION_REGION == 'FR' ]]
+		then
+			# we are in France
+			RESULT=`echo "https://$SUBDOMAIN.marketplace.eu.axway.com"`
+		else 
+			if [[ $ORGANIZATION_REGION == 'AP' ]]
+			then
+				# we are in APAC
+				RESULT=`echo "https://$SUBDOMAIN.marketplace.ap-sg.axway.com"`
+			else
+				# Default US region
+				RESULT=`echo "https://$SUBDOMAIN.marketplace.us.axway.com"`
+			fi
+		fi
+	fi
+	echo $RESULT
+}
+
+######################################
+# Validate the environment variables #
+######################################
+function checkEnvironmentVariables {
+	
+	if [[ $CENTRAL_URL == mull ]]
+	then
+		echo "CENTRAL_URL vairable is not set" 
+		exit 1
+	fi
+
+	if [[ $MARKETPLACE_TITLE == null ]]
+	then
+		echo "MARKETPLACE_TITLE vairable is not set" 
+		exit 1
+	fi
+
+	if [[ $MARKETPLACE_URL == null ]]
+	then
+		echo "MARKETPLACE_URL vairable is not set" 
+		exit 1
+	fi
 }

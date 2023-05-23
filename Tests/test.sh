@@ -189,35 +189,39 @@ function testCURL {
 
 function testMarketplaceAPIs {
 
+	loginToPlatform
+
+	MP_URL=$(readMarketplaceUrlFromMarketplaceName)
+
 	#echo "	Testing the MP product search..."
 	CATALOG_TITLE="nytimes (v7-emt)"
 	SANITIZE_CATALOG_TITLE=${CATALOG_TITLE// /%20}
-	PRODUCT_ID=$(getFromMarketplace "/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_TITLE&sort=-lastVersion.metadata.createdAt%2C%2Bname" ".items[0].id")
+	PRODUCT_ID=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_TITLE&sort=-lastVersion.metadata.createdAt%2C%2Bname" ".items[0].id")
 	echo "		Found product:" $PRODUCT_ID
 
 #	echo "	Testing the MP product version search..."
-#	CONTENT=$(getFromMarketplace "/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_NAME&sort=-lastVersion.metadata.createdAt%2C%2Bname")
+#	CONTENT=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_NAME&sort=-lastVersion.metadata.createdAt%2C%2Bname")
 #	echo "		Found latest product version" `echo $CONTENT | jq -r ".items[0].latestVersion.id"`
 #	PRODUCT_ID=`echo $CONTENT | jq -r ".items[0].id"`
 #	echo "		Found product:" $PRODUCT_ID
 
 #	SUBSCRIPTION_APP_NAME="Medical House"
-#	CONTENT=$(getFromMarketplace "/api/v1/applications?limit=10&offset=0&search=$SUBSCRIPTION_APP_NAME&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
+#	CONTENT=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=$SUBSCRIPTION_APP_NAME&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
 #	echo "$SUBSCRIPTION_APP_NAME -> $CONTENT"
 
-#	MP_PRODUCT_PLAN_ID=$(getFromMarketplace "/api/v1/products/$PRODUCT_ID/plans" ".items[0].id")
+#	MP_PRODUCT_PLAN_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$PRODUCT_ID/plans" ".items[0].id")
 #	echo "		Found product plan ID:" $MP_PRODUCT_PLAN_ID
 
 #	echo "	Testing the MP product plan search..."
-#	PLAN_ID=$(getFromMarketplace "/api/v1/products/$PRODUCT_ID/plans" ".items[0].id")
+#	PLAN_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$PRODUCT_ID/plans" ".items[0].id")
 #	echo "		Found plan:" $PLAN_ID
 
 #	echo "	Testing creating MP subscription"
-#	postToMarketplace "/api/v1/subscriptions" $TEMP_DIR/product-spacex-subscription.json
+#	postToMarketplace "$MP_URL/api/v1/subscriptions" $TEMP_DIR/product-spacex-subscription.json
 
 	MP_PRODUCT_ID=8a2e8d44882b74fd01882f41c7a3091f
 	SUBSCRIPTION_OWNING_TEAM=e4ec6c3369cdafa50169d9f8a6600dcb
-	CONTENT=$(getFromMarketplace "/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
+	CONTENT=$(getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
 	NB_SUBSCRIPTION=`echo $CONTENT | jq '.items|length'`
 	echo "Found: $NB_SUBSCRIPTION subscription(s)"
 
@@ -271,6 +275,19 @@ function testJQ {
 	cat ./product-application-access.json
 }
 
+function testReadMarketplaceUrlFromMarketplaceName {
+
+	loginToPlatform
+
+	echo "$MARKETPLACE_TITLE"
+
+	MP_URL=$(readMarketplaceUrlFromMarketplaceName)
+	echo "Found MP url: $MP_URL"
+
+	MP_GUID=$(readMarketplaceGuidFromMarketplaceName)
+	echo "Found MP guid: $MP_GUID"
+}
+
 ##########################
 ####### START HERE #######
 ##########################
@@ -279,8 +296,9 @@ function testJQ {
 #testCURL
 #testParameter
 #testJQ
-#testMarketplaceAPIs
+testMarketplaceAPIs
 #testErrorFucntion
 #testGetApiServiceInstanceOrdered
 #sanitizeParenthesisAndSpace "nty (v7-emt)"
-findCatalogItemFromConsumerInstance
+#findCatalogItemFromConsumerInstance
+#testReadMarketplaceUrlFromMarketplaceName

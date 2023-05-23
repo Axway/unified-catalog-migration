@@ -206,136 +206,121 @@ function migrate() {
 		# do we need to publish to the marketpalces?
 		if [[ $PUBLISH_TO_MARKETPLACES == "Y" ]]
 		then
-			# Publishing to the selected Marketplace if MARKEPLACE
-			echo "	Publishing product into Marketplaces..."
-			echo "		Read Marketplaces...."
 
-			if [[ $MARKETPLACE_TITLE == "" ]]
+			# read Marketplace URL
+			MP_URL=$(readMarketplaceUrlFromMarketplaceName)
+			MP_GUID=$(readMarketplaceGuidFromMarketplaceName)
+
+			
+			echo "		Publishing $PRODUCT_NAME to Marketplace $MARKETPLACE_TITLE ($MP_GUID)..."
+			if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
-				# Publish to all marketplaces
-				axway central get marketplaces -o json > $TEMP_DIR/marketplace.json
+				echo "		without owner"
+				jq -n -f ./jq/product-publish-create.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
 			else
-				# publish to selected marketplace
-				axway central get marketplaces -q title==$MARKETPLACE_TITLE -o json > $TEMP_DIR/marketplace.json
+				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+				jq -n -f ./jq/product-publish-create-owner.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
 			fi
+			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json
+			error_exit "Problem with pubishing a Product on Marketplace" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json"
+			echo "		$PRODUCT_NAME published to Marketplace $MARKETPLACE_TITLE"
 
-			#loop for each Marketplace
-			cat $TEMP_DIR/marketplace.json | jq -rc ".[] | {name: .name}" | while IFS= read -r lineMp ; do
+			#TODO - ask whether or not to create subscription?
 
-				# read the marketplace name
-				MARKETPLACE_NAME=$(echo $lineMp | jq -r '.name')
-				
-				echo "		Publishing $PRODUCT_NAME to Marketplace $MARKETPLACE_TITLE ($MARKETPLACE_NAME)..."
-				if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+			##########
+			# WARNING: Consumerinstance != Catalog item - only the name/title can link both
+			##########
+
+			# read catalog id from catalog name
+			echo "	Reading associated Unified Catalog subscription(s)...."
+			curl -s --location --request GET $CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/subscriptions?query=%28state==ACTIVE%29' --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemSubscriptions.json
+			echo "	Found " `cat $TEMP_DIR/catalogItemSubscriptions.json | jq '.|length'` " ACTIVE subscription(s)"
+
+			# loop on subscription
+			cat $TEMP_DIR/catalogItemSubscriptions.json | jq -rc ".[] | {subId: .id, subName: .name, teamId: .owningTeamId, appName: .properties[0].value.appName}" | while IFS= read -r line ; do
+				# read subscriptionId, application name, teamId and subscription name
+				SUBSCRIPTION_ID=$(echo $line | jq -r '.subId')
+				SUBSCRIPTION_NAME=$(echo $line | jq -r '.subName')
+				SUBSCRIPTION_OWNING_TEAM=$(echo $line | jq -r '.teamId')
+				SUBSCRIPTION_APP_NAME=$(echo $line | jq -r '.appName')
+
+				echo "		Need to migrate subscription ($SUBSCRIPTION_NAME) for team ($SUBSCRIPTION_OWNING_TEAM) using application ($SUBSCRIPTION_APP_NAME) to marketplace ($MARKETPLACE_NAME)"
+
+				echo "			Searching product id in marketplace..."
+				SANITIZE_CATALOG_NAME=${CONSUMER_INSTANCE_TITLE// /%20}
+				CONTENT=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_NAME&sort=-lastVersion.metadata.createdAt%2C%2Bname")
+				MP_PRODUCT_ID=`echo $CONTENT | jq -r ".items[0].id"`
+				MP_PRODUCT_VERSION_ID=`echo $CONTENT | jq -r ".items[0].latestVersion.id"`
+				echo "			Found product id in marketplace:" $MP_PRODUCT_ID
+				echo "			Found product latest version id in marketplace:" $MP_PRODUCT_VERSION_ID
+				echo "			Searching product plan id in marketplace..."
+				MP_PRODUCT_PLAN_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/plans" ".items[0].id")
+				echo "			Found product plan id in marketplace:" $MP_PRODUCT_PLAN_ID
+				MP_ASSETRESOURCE_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" ".items[0].id")
+				echo "			Found product asset resource id in marketplace:" $MP_ASSETRESOURCE_ID
+
+				echo "			Checking if subscription already exist"
+				# it is forbidden for the same team to have 2 subsctiptions on the same plam
+				CONTENT=$(getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
+				NB_SUBSCRIPTION=`echo $CONTENT | jq '.items|length'`
+
+				if [[ $NB_SUBSCRIPTION != 0 ]]
 				then
-					echo "		without owner"
-					jq -n -f ./jq/product-publish-create.jq --arg marketplace_name $MARKETPLACE_NAME --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
+					echo "				A subscription already exist for team $SUBSCRIPTION_OWNING_TEAM... No need to create."
 				else
-					echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-					jq -n -f ./jq/product-publish-create-owner.jq --arg marketplace_name $MARKETPLACE_NAME --arg product_name $PRODUCT_NAME  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
-				fi
-				axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json
-				error_exit "Problem with pubishing a Product on Marketplace" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json"
-				echo "		$PRODUCT_NAME published to Marketplace $MARKETPLACE_TITLE"
+					echo "			Create subscription $SUBSCRIPTION_NAME...."
+					#SUBNAME=$PRODUCT_NAME-$SUBSCRIPTION_OWNING_TEAM
+					jq -n -f ./jq/product-mp-subscription.jq --arg subscriptionTitle $SUBSCRIPTION_NAME --arg teamId $SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
+					CONTENT=$(postToMarketplace "$MP_URL/api/v1/subscriptions" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json)
+					error_post "Problem creating subscription on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
+					# read the subscriptionId from the created susbcription
+					MP_SUBSCRIPTION_ID=`echo $CONTENT | jq -r ".id"`
 
-				#TODO - ask whether or not to create subscription?
-
-				##########
-				# WARNING: Consumerinstance != Catalog item - only the name/title can link both
-				##########
-
-				# read catalog id from catalog name
-				echo "	Reading associated Unified Catalog subscription(s)...."
-				curl -s --location --request GET $CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/subscriptions?query=%28state==ACTIVE%29' --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemSubscriptions.json
-				echo "	Found " `cat $TEMP_DIR/catalogItemSubscriptions.json | jq '.|length'` " ACTIVE subscription(s)"
-
-				# loop on subscription
-				cat $TEMP_DIR/catalogItemSubscriptions.json | jq -rc ".[] | {subId: .id, subName: .name, teamId: .owningTeamId, appName: .properties[0].value.appName}" | while IFS= read -r line ; do
-					# read subscriptionId, application name, teamId and subscription name
-					SUBSCRIPTION_ID=$(echo $line | jq -r '.subId')
-					SUBSCRIPTION_NAME=$(echo $line | jq -r '.subName')
-					SUBSCRIPTION_OWNING_TEAM=$(echo $line | jq -r '.teamId')
-					SUBSCRIPTION_APP_NAME=$(echo $line | jq -r '.appName')
-
-					echo "		Need to migrate subscription ($SUBSCRIPTION_NAME) for team ($SUBSCRIPTION_OWNING_TEAM) using application ($SUBSCRIPTION_APP_NAME) to marketplace ($MARKETPLACE_NAME)"
-
-					echo "			Searching product id in marketplace..."
-					SANITIZE_CATALOG_NAME=${CONSUMER_INSTANCE_TITLE// /%20}
-					CONTENT=$(getFromMarketplace "/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_NAME&sort=-lastVersion.metadata.createdAt%2C%2Bname")
-					MP_PRODUCT_ID=`echo $CONTENT | jq -r ".items[0].id"`
-					MP_PRODUCT_VERSION_ID=`echo $CONTENT | jq -r ".items[0].latestVersion.id"`
-					echo "			Found product id in marketplace:" $MP_PRODUCT_ID
-					echo "			Found product latest version id in marketplace:" $MP_PRODUCT_VERSION_ID
-					echo "			Searching product plan id in marketplace..."
-					MP_PRODUCT_PLAN_ID=$(getFromMarketplace "/api/v1/products/$MP_PRODUCT_ID/plans" ".items[0].id")
-					echo "			Found product plan id in marketplace:" $MP_PRODUCT_PLAN_ID
-					MP_ASSETRESOURCE_ID=$(getFromMarketplace "/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" ".items[0].id")
-					echo "			Found product asset resource id in marketplace:" $MP_ASSETRESOURCE_ID
-
-					echo "			Checking if subscription already exist"
-					# it is forbidden for the same team to have 2 subsctiptions on the same plam
-					CONTENT=$(getFromMarketplace "/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
-					NB_SUBSCRIPTION=`echo $CONTENT | jq '.items|length'`
-
-					if [[ $NB_SUBSCRIPTION != 0 ]]
+					if [[ $SUBSCRIPTION_APP_NAME == null ]]
 					then
-						echo "				A subscription already exist for team $SUBSCRIPTION_OWNING_TEAM... No need to create."
+						echo "			/!\ no application found, cannot create ManagedApplication / AccessRequest"
 					else
-						echo "			Create subscription $SUBSCRIPTION_NAME...."
-						#SUBNAME=$PRODUCT_NAME-$SUBSCRIPTION_OWNING_TEAM
-						jq -n -f ./jq/product-mp-subscription.jq --arg subscriptionTitle $SUBSCRIPTION_NAME --arg teamId $SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
-						CONTENT=$(postToMarketplace "/api/v1/subscriptions" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json)
-						error_post "Problem creating subscription on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
-						# read the subscriptionId from the created susbcription
-						MP_SUBSCRIPTION_ID=`echo $CONTENT | jq -r ".id"`
 
-						if [[ $SUBSCRIPTION_APP_NAME == null ]]
+						# check if managedapp not already exists to avoid duplicating it
+						MP_MANAGED_APP_ID=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=$SUBSCRIPTION_APP_NAME&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
+
+						if [[ MP_MANAGED_APP_ID == null ]]
 						then
-							echo "			/!\ no application found, cannot create ManagedApplication / AccessRequest"
+							# application does not exist yet... so we can create it
+							echo "			Create managed application $SUBSCRIPTION_APP_NAME...."
+							jq -n -f ./jq/product-mp-application.jq --arg applicationTitle $SUBSCRIPTION_APP_NAME --arg teamId $SUBSCRIPTION_OWNING_TEAM > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json
+							CONTENT=$(postToMarketplace "/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json)
+							error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
+							MP_MANAGED_APP_ID=`echo $CONTENT | jq -r ".id"`
 						else
-
-							# check if managedapp not already exists to avoid duplicating it
-							MP_MANAGED_APP_ID=$(getFromMarketplace "/api/v1/applications?limit=10&offset=0&search=$SUBSCRIPTION_APP_NAME&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
-
-							if [[ MP_MANAGED_APP_ID == null ]]
-							then
-								# application does not exist yet... so we can create it
-								echo "			Create managed application $SUBSCRIPTION_APP_NAME...."
-								jq -n -f ./jq/product-mp-application.jq --arg applicationTitle $SUBSCRIPTION_APP_NAME --arg teamId $SUBSCRIPTION_OWNING_TEAM > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json
-								CONTENT=$(postToMarketplace "/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json)
-								error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
-								MP_MANAGED_APP_ID=`echo $CONTENT | jq -r ".id"`
-							else
-								echo "			$SUBSCRIPTION_APP_NAME managedApp is already existing."
-							fi
-
-							# Now we need to check that we have all elements to create the access request ie CRD/ARD otherwise it will fails
-							# read apisr and check ARD/CRD presence
-							axway central get apisi -q "metadata.references.name==$CATALOG_APISERVICE&sort=metadata.audit.createTimestamp%2CDESC" -s $CATALOG_APISERVICEENV -o json > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json
-							# retrieve ARD / CRD....
-							cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json | jq -rc ".[0] | {ard: .spec.accessRequestDefinition, crd: .spec.credentialRequestDefinitions}" > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json
-							ARD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".ard"`
-							CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
-				
-							if [[ $ARD != null && $CRD != null ]]
-							then
-								echo "			Create request access...."
-								ACCESS_REQUEST_NAME="Something temporary"
-
-								jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json
-								CONTENT=$(postToMarketplace "/api/v1/applications/$MP_MANAGED_APP_ID/accessrequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json)
-								error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
-							else
-								echo "			/!\ Cannot proceed with AccessRequest as the service does not have the CredentialRequestDefinition nor the AccessRequestDefinition"
-							fi
-				
+							echo "			$SUBSCRIPTION_APP_NAME managedApp is already existing."
 						fi
 
+						# Now we need to check that we have all elements to create the access request ie CRD/ARD otherwise it will fails
+						# read apisr and check ARD/CRD presence
+						axway central get apisi -q "metadata.references.name==$CATALOG_APISERVICE&sort=metadata.audit.createTimestamp%2CDESC" -s $CATALOG_APISERVICEENV -o json > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json
+						# retrieve ARD / CRD....
+						cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json | jq -rc ".[0] | {ard: .spec.accessRequestDefinition, crd: .spec.credentialRequestDefinitions}" > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json
+						ARD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".ard"`
+						CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
+			
+						if [[ $ARD != null && $CRD != null ]]
+						then
+							echo "			Create request access...."
+							ACCESS_REQUEST_NAME="Something temporary"
+
+							jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json
+							CONTENT=$(postToMarketplace "/api/v1/applications/$MP_MANAGED_APP_ID/accessrequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json)
+							error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
+						else
+							echo "			/!\ Cannot proceed with AccessRequest as the service does not have the CredentialRequestDefinition nor the AccessRequestDefinition"
+						fi
+			
 					fi
 
-				done # loop over subscription
+				fi
 
-			done # loop over marketplaces
+			done # loop over subscription
 
 		fi # Publish to Marketplace
 		
@@ -382,6 +367,10 @@ then
 fi
 echo "All pre-requisites are available" 
 
+# check environment variables
+checkEnvironmentVariables
+echo "All mandatory variables are set" 
+
 #login to the platform
 echo ""
 echo "Connecting to Amplify platform with Axway CLI"
@@ -400,6 +389,7 @@ echo ""
 echo "Retrieving the organization ID..."
 PLATFORM_ORGID=$(axway auth list --json | jq -r '.[0] .org .id')
 PLATFORM_TOKEN=$(axway auth list --json | jq -r '.[0] .auth .tokens .access_token ')
+ORGANIZATION_REGION=$(axway auth list --json | jq -r '.[0] .org .region')
 echo "Done"
 
 echo ""
@@ -411,6 +401,7 @@ echo ""
 echo "Migrating Unified Catalog items into Asset and Product"
 #migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "spacex"
 migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "nytimes (v7-emt)"
+#migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "calculatrice (Stage: Demo)"
  
 echo "Done."
 

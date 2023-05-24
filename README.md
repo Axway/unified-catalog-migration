@@ -32,32 +32,34 @@ An environment file is available in config directory to setup some properties:
 
 ## Mapping Unified Catalog => Marketplace
 
-Initial Object             =>             Target Objects
+The following table show how the properties from the Unified Catalog object are used to create the Marketplace objects:
 
-ConsumerInstance                        Asset               Product                Marketplace Subscription         Marketplace Application
-    - Id
-    - name
-    - title                             Title               Title
-    - Description                       Description         Description
-    - API Service                       APIService
-
-APIService
-    - icon: not used
-
-APIServiceInstance
-    - CredentialRequestDefinition
-    - AccessRequestDefinition
-  
-CatalogItem (= consumerInstance)
-    - image/base64                      Icon                Icon
-  
-CatalogItemDocumentation
-    - value                                                 Article
-
-Subscription
-    - name                                                                         Name
-    - Application Name (if available)                                                                               Name
-    - OwingTeam                                                                    owingTeam                        owningTeam
+| Initial Objects                      | Asset                | Product       | MArketplace subscription | Marketplace application |
+|--------------------------------------|----------------------|---------------|--------------------------|-------------------------|
+| **Consumer instance**                |                      |               |                          |                         |
+|  - Id                                |                      |               |                          |                         |
+|  - Name                              |                      |               |                          |                         |
+|  - Title                             | - Title              | - Title       |                          |                         |
+|  - Description                       | - Description        | - Description |                          |                         |
+|  - API Service                       | - APIService         |               |                          |                         |
+|                                      |                      |               |                          |                         |
+| **APIService**                       |                      |               |                          |                         |
+|  - Icon (not used)                   |                      |               |                          |                         |
+|                                      |                      |               |                          |                         |
+| **APIServiceInstance**               |                      |               |                          |                         |
+|  - CredentialRequestDefinition       |                      |               |                          |                         |
+|  - AccessRequestDefinition           |                      |               |                          |                         |
+|                                      |                      |               |                          |                         |
+| **CatalogItem (= consumerInstance)** |                      |               |                          |                         |
+|  - Image/base64                      | - Icon               | - Icon        |                          |                         |
+|                                      |                      |               |                          |                         |
+| **CatalogItemDocumentation**         |                      |               |                          |                         |
+|  - Value                             |                      | - Article     |                          |                         |
+|                                      |                      |               |                          |                         |
+| **Subscription**                     |                      |               |                          |                         |
+|  - Name                              |                      |               | - Name                   |                         |
+|  - Application name (if available)   |                      |               |                          | - Name                  |
+|  - OwningTeam                        |                      |               | - OwningTeam             | - OwningTeam            |
 
 ## Usage
 
@@ -67,6 +69,6 @@ Subscription
 
 ## Improvements
 
+* Icon is broken is there is no initial icon.
 * Categories
-* add owner of Asset / Product & Plan based on the service owner.
-* add the sharing of catalog?
+* add the product visibility based on the catalog item sharing

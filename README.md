@@ -71,4 +71,5 @@ The following table show how the properties from the Unified Catalog object are 
 
 * Icon is broken is there is no initial icon.
 * Categories
+* Tags
 * add the product visibility based on the catalog item sharing

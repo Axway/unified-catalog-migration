@@ -13,9 +13,9 @@ The script is:
 
 ## Pre requisites
 
-Axway CLI
-jq
-curl
+* Axway CLI
+* jq
+* curl
 
 The script can be run under windows bash shell or Linux
 

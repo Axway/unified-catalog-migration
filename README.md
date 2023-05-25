@@ -34,7 +34,7 @@ An environment file is available in config directory to setup some properties:
 
 The following table show how the properties from the Unified Catalog object are used to create the Marketplace objects:
 
-| Initial Objects                      | Asset                | Product       | MArketplace subscription | Marketplace application |
+| Initial Objects                      | Asset                | Product       | Marketplace subscription | Marketplace application |
 |------------------------------------|------------------------|---------------|--------------------------|-------------------------|
 | **Consumer instance**                |                      |               |                          |                         |
 |  Id                                  |                      |               |                          |                         |

@@ -13,9 +13,9 @@ The script is:
 
 ## Pre requisites
 
-Axway CLI
-jq
-curl
+* Axway CLI
+* jq
+* curl
 
 The script can be run under windows bash shell or Linux
 
@@ -33,32 +33,32 @@ An environment file is available in config directory to setup some properties:
 
 The following table show how the properties from the Unified Catalog object are used to create the Marketplace objects:
 
-| Initial Objects                      | Asset                | Product       | MArketplace subscription | Marketplace application |
-|--------------------------------------|----------------------|---------------|--------------------------|-------------------------|
+| Initial Objects                      | Asset                | Product       | Marketplace subscription | Marketplace application |
+|------------------------------------|------------------------|---------------|--------------------------|-------------------------|
 | **Consumer instance**                |                      |               |                          |                         |
-|  - Id                                |                      |               |                          |                         |
-|  - Name                              |                      |               |                          |                         |
-|  - Title                             | - Title              | - Title       |                          |                         |
-|  - Description                       | - Description        | - Description |                          |                         |
-|  - API Service                       | - APIService         |               |                          |                         |
+|  Id                                  |                      |               |                          |                         |
+|  Name                                |                      |               |                          |                         |
+|  Title                               | Title                | Title         |                          |                         |
+|  Description                         | Description          | Description   |                          |                         |
+|  API Service                         | APIService           |               |                          |                         |
 |                                      |                      |               |                          |                         |
 | **APIService**                       |                      |               |                          |                         |
-|  - Icon (not used)                   |                      |               |                          |                         |
+|  Icon (not used)                     |                      |               |                          |                         |
 |                                      |                      |               |                          |                         |
 | **APIServiceInstance**               |                      |               |                          |                         |
-|  - CredentialRequestDefinition       |                      |               |                          |                         |
-|  - AccessRequestDefinition           |                      |               |                          |                         |
+|  CredentialRequestDefinition         |                      |               |                          |                         |
+|  AccessRequestDefinition             |                      |               |                          |                         |
 |                                      |                      |               |                          |                         |
 | **CatalogItem (= consumerInstance)** |                      |               |                          |                         |
-|  - Image/base64                      | - Icon               | - Icon        |                          |                         |
+|  Image/base64                        | Icon                 | Icon          |                          |                         |
 |                                      |                      |               |                          |                         |
 | **CatalogItemDocumentation**         |                      |               |                          |                         |
-|  - Value                             |                      | - Article     |                          |                         |
+|  Value                               |                      | Article       |                          |                         |
 |                                      |                      |               |                          |                         |
 | **Subscription**                     |                      |               |                          |                         |
-|  - Name                              |                      |               | - Name                   |                         |
-|  - Application name (if available)   |                      |               |                          | - Name                  |
-|  - OwningTeam                        |                      |               | - OwningTeam             | - OwningTeam            |
+|  Name                                |                      |               | Name                     |                         |
+|  Application name (if available)     |                      |               |                          | Name                    |
+|  OwningTeam                          |                      |               | OwningTeam               | OwningTeam              |
 
 ## Usage
 
@@ -70,4 +70,5 @@ The following table show how the properties from the Unified Catalog object are 
 
 * Icon is broken is there is no initial icon.
 * Categories
+* Tags
 * add the product visibility based on the catalog item sharing

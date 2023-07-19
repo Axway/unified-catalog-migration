@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # TODO: 
-# - add owner of Asset / Product & Plan based on the service owner.
 # - add the sharing of catalog?
 # - catalog documentation?
 
@@ -67,18 +66,28 @@ function migrate() {
 		echo "	Finding catalog item details..."
 		echo "		Finding ID..."
 		# query format section: query=(name=='VALUE') -> replace ( and ) by their respective HTML value
+		CENTRAL_URL=$(getCentralURL)
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE'%27%29&' 
 		# replace spaces with %20 in case the Catalog name has some
 		URL=${URL// /%20}
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 		CATALOG_ID=`cat $TEMP_DIR/catalogItem.json | jq -r ".[0] | .id"`
-		#echo "			CatID=$CATALOG_ID"
+		echo "			CatID=$CATALOG_ID"
 
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription' 
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 
 		echo "		Finding icon..."
-		CATALOG_ICON="data:image/png;base64,"`cat $TEMP_DIR/catalogItem.json | jq -r "._embedded.image.base64"`
+		CATALOG_ICON=`cat $TEMP_DIR/catalogItem.json | jq -r "._embedded.image.base64"`
+		if [[ $CATALOG_ICON = null ]]
+		then
+			# Fake value that will be remove when creating the asset & product json files
+			CATALOG_ICON_INFO="_"
+			echo "			No icon found."
+		else
+			echo "			Icon found."
+			CATALOG_ICON_CONTENT="data:image/png;base64,"$CATALOG_ICON
+		fi
 
 		echo "		Finding documentation..."
 		CATALOG_DOCUMENTATION=$(readCatalogDocumentationFromItsId "$CATALOG_ID")
@@ -95,13 +104,27 @@ function migrate() {
 
 		# creating asset in Central
 		echo "	creating asset file..."
-		if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+		if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 		then
 			echo "		without owner"
-			jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+			jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+
+			if [[ $CATALOG_ICON == null ]]
+			then
+				# remove the icon from the file - need an intermediate file :-( 
+				cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
+				mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+			fi
 		else
 			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-			jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+			jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+
+			if [[ $CATALOG_ICON == null ]]
+			then
+				# remove the icon from the file - need an intermediate file :-( 
+				cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
+				mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+			fi
 
 		fi
 		error_exit "Problem when creating asset file" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
@@ -130,13 +153,27 @@ function migrate() {
 
 		# create the corresponding product
 		echo "	creating product file..." 
-		if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+		if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 		then
 			echo "		without owner"
-			jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+
+			if [[ $CATALOG_ICON == null ]]
+			then
+				# remove the icon from the file - need an intermediate file :-( 
+				cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
+				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			fi
 		else
 			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-			jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+
+			if [[ $CATALOG_ICON == null ]]
+			then
+				# remove the icon from the file - need an intermediate file :-( 
+				cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
+				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			fi
 		fi
 		echo "	Posting product to Central..."
 		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json
@@ -171,7 +208,7 @@ function migrate() {
 
 		#  Create a Product Plan (Free)
 		echo "	Adding Free plan..." 
-		if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+		if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 		then
 			echo "		without owner"
 			jq -n -f ./jq/product-plan-create.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
@@ -213,7 +250,7 @@ function migrate() {
 
 			
 			echo "		Publishing $PRODUCT_NAME to Marketplace $MARKETPLACE_TITLE ($MP_GUID)..."
-			if [[ CONSUMER_INSTANCE_OWNER_ID == null ]]
+			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
 				echo "		without owner"
 				jq -n -f ./jq/product-publish-create.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
@@ -270,7 +307,7 @@ function migrate() {
 				else
 					echo "			Create subscription $SUBSCRIPTION_NAME...."
 					#SUBNAME=$PRODUCT_NAME-$SUBSCRIPTION_OWNING_TEAM
-					jq -n -f ./jq/product-mp-subscription.jq --arg subscriptionTitle $SUBSCRIPTION_NAME --arg teamId $SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
+					jq -n -f ./jq/product-mp-subscription.jq --arg subscriptionTitle "$SUBSCRIPTION_NAME" --arg teamId $SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
 					CONTENT=$(postToMarketplace "$MP_URL/api/v1/subscriptions" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json)
 					error_post "Problem creating subscription on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
 					# read the subscriptionId from the created susbcription
@@ -328,10 +365,10 @@ function migrate() {
 		echo "	cleaning temp files..."
 		rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
 
-	done # loop over catalog itesm
+	done # loop over catalog items
 
-#	clean up catalog item files
-#	rm $TEMP_DIR/$TEMP_FILE
+	# clean up catalog item files
+	rm $TEMP_DIR/*
 
 }
 
@@ -399,9 +436,7 @@ echo "Done."
 
 echo ""
 echo "Migrating Unified Catalog items into Asset and Product"
-#migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "spacex"
-migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "nytimes (v7-emt)"
-#migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "calculatrice (Stage: Demo)"
+migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME
  
 echo "Done."
 

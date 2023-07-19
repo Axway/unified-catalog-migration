@@ -25,7 +25,6 @@ An environment file is available in config directory to setup some properties:
 
 * CLIENT_ID to use a service account instead of a real user
 * CLIENT_SECRET to set the service account private key.
-* CENTRAL_URL (default US) to connect to the appropriate environment
 * PLAN_TITLE to set the default plan title
 * PLAN_QUOTA to set the default plan quota
 * PUBLISH_TO_MARKETPLACES to know if products need to be publish to marketplace

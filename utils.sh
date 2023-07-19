@@ -131,6 +131,7 @@ function readCatalogDocumentationFromItsId() {
 # {"guid": "guidValue", "url": "urlValue", "subdomain": "subDomainValue"} #
 ###########################################################################
 function readMarketplaceInformation {
+
 	# Get catalog documentation property
 	URL='https://platform.axway.com/api/v1/provider?org_guid='$PLATFORM_ORGID
 
@@ -190,17 +191,40 @@ function readMarketplaceUrlFromMarketplaceName {
 	echo $RESULT
 }
 
+########################################
+# Build CentralURl based on the region #
+#                                      #
+# Input: region                        #
+# Output: CENTRAL_URL is set           #
+########################################
+function getCentralURL {
+
+	if [[ $CENTRAL_URL == '' ]]
+	then
+		if [[ $ORGANIZATION_REGION == 'FR' ]]
+		then
+			# we are in France
+			CENTRAL_URL="https://central.eu-fr.axway.com"
+		else 
+			if [[ $ORGANIZATION_REGION == 'AP' ]]
+			then
+				# we are in APAC
+				CENTRAL_URL="https://central.ap-sg.axway.com"
+			else
+				# Default US region
+				CENTRAL_URL="https://apicentral.axway.com"
+			fi
+		fi
+	fi 
+
+	echo $CENTRAL_URL
+}
+
 ######################################
 # Validate the environment variables #
 ######################################
 function checkEnvironmentVariables {
 	
-	if [[ $CENTRAL_URL == mull ]]
-	then
-		echo "CENTRAL_URL vairable is not set" 
-		exit 1
-	fi
-
 	if [[ $MARKETPLACE_TITLE == null ]]
 	then
 		echo "MARKETPLACE_TITLE vairable is not set" 

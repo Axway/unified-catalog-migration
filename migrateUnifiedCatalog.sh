@@ -408,8 +408,6 @@ echo "All pre-requisites are available"
 checkEnvironmentVariables
 echo "All mandatory variables are set" 
 
-exit 0
-
 #login to the platform
 echo ""
 echo "Connecting to Amplify platform with Axway CLI"

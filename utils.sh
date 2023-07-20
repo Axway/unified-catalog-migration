@@ -225,13 +225,13 @@ function getCentralURL {
 ######################################
 function checkEnvironmentVariables {
 	
-	if [[ $MARKETPLACE_TITLE == null ]]
+	if [[ $CENTRAL_ENVIRONMENT == '' ]]
 	then
-		echo "MARKETPLACE_TITLE vairable is not set" 
+		echo "CENTRAL_ENVIRONMENT vairable is not set" 
 		exit 1
 	fi
 
-	if [[ $MARKETPLACE_URL == null ]]
+	if [[ $MARKETPLACE_TITLE == '' ]]
 	then
 		echo "MARKETPLACE_URL vairable is not set" 
 		exit 1

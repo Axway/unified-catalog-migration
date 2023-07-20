@@ -408,6 +408,8 @@ echo "All pre-requisites are available"
 checkEnvironmentVariables
 echo "All mandatory variables are set" 
 
+exit 0
+
 #login to the platform
 echo ""
 echo "Connecting to Amplify platform with Axway CLI"
@@ -417,7 +419,7 @@ if [[ $CLIENT_ID == "" ]]
 	axway auth login
   else
 	echo "Service account supplied => login headless"
-	axway auth login --client-id $1 --secret-file "$2" --username $3
+	axway auth login --client-id $CLIENT_ID --secret-file "$CLIENT_SECRET"
 fi
 error_exit "Problem with authentication to your account. Please, verify your credentials"
 
@@ -438,11 +440,9 @@ echo ""
 if [[ $# == 0 ]]
 then
 	echo "Migrating all Unified Catalog items belonging to $CENTRAL_ENVIRONMENT environment into Asset and Product"
-	exit 0
 	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME
 else
 	echo "Migrating $1 Unified Catalog item into Asset and Product"
-	exit 0
 	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME $1
 fi
  

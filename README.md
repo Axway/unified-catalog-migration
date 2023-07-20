@@ -4,13 +4,13 @@ Tool for migrating Unified Catalog service into Marketplace product
 
 The script is:
 
-1. login using the `axway auth login`
-2. reading all existing catalog items
+1. login using the `axway auth login` either using the UI or using a service account (if set in the configuration file)
+2. reading all existing catalog items from a specific environment
 3. For each catalog item
     * create an asset
     * create a product
     * publish the product
-    * read existing Active subscription and create the corresponding MP subscription
+    * read existing Active subscription and create the corresponding Marketplace subscription
 
 ## Pre requisites
 
@@ -30,7 +30,7 @@ An environment file is available in config directory to setup some properties:
 * PLAN_TITLE to set the default plan title
 * PLAN_QUOTA to set the default plan quota
 * PLAN_APPROVAL_MODE - automatic (default) or manual
-* PUBLISH_TO_MARKETPLACES to know if products need to be publish to marketplace
+* PUBLISH_TO_MARKETPLACES to know if products need to be publish to Marketplace
 * MARKETPLACE_TITLE to give the Marketplace title where the product needs to be published.
 
 ## Mapping Unified Catalog => Marketplace
@@ -78,9 +78,9 @@ Migrating a single catalog item link to an environment:
 ./migrateUnifiedCatalog.sh "catalogItemTitle"
 ```
 
-## Improvements
+## know limitations
 
-* Categories
-* Tags
-* add the product visibility based on the catalog item sharing
-* Publish product to all available Marketplaces
+* Categories from Unified Catalog are not added as a Product Category
+* Tags from the Unified Catalog are not added to the product
+* No product visibility set based on the catalog item sharing
+* Product can be publish in only one Marketplace

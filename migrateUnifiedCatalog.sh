@@ -248,7 +248,7 @@ function migrate() {
 			MP_URL=$(readMarketplaceUrlFromMarketplaceName)
 			MP_GUID=$(readMarketplaceGuidFromMarketplaceName)
 
-			
+			# TODO - Manage publication to all Marketplaces?
 			echo "		Publishing $PRODUCT_NAME to Marketplace $MARKETPLACE_TITLE ($MP_GUID)..."
 			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
@@ -435,8 +435,16 @@ create_stage_if_not_exist
 echo "Done."
 
 echo ""
-echo "Migrating Unified Catalog items into Asset and Product"
-migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME
+if [[ $# == 0 ]]
+then
+	echo "Migrating all Unified Catalog items belonging to $CENTRAL_ENVIRONMENT environment into Asset and Product"
+	exit 0
+	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME
+else
+	echo "Migrating $1 Unified Catalog item into Asset and Product"
+	exit 0
+	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME $1
+fi
  
 echo "Done."
 

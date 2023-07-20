@@ -369,9 +369,17 @@ function testGetCentralUrl {
 	echo "2nd try check: $CENTRAL_URL"
 }
 
+
 ##########################
 ####### START HERE #######
 ##########################
+
+#if [[ $# == 0 ]]
+#then
+#	echo "no parameter"
+#else
+#	echo "Paramter; $1"
+#fi
 
 #testReadingCatalogDocumentation
 #testCURL
@@ -393,3 +401,4 @@ function testGetCentralUrl {
 #migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "Recurly"
 #migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "Bricks"
 
+ 

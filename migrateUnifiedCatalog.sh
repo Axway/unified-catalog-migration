@@ -33,11 +33,11 @@ function migrate() {
 	INPUT_TITLE=$4
 
 	# Should we migrate all or just one?
-	if [[ $INPUT_TITLE == null ]]
+	if [[ $INPUT_TITLE == '' ]]
 	then
-		# migrate everything
+		# migrate everything from given environment
 		echo "Reading all Unified Catalog items..."
-		axway central get consumeri -o json > $TEMP_DIR/$TEMP_FILE
+		axway central get consumeri -s $CENTRAL_ENVIRONMENT -o json > $TEMP_DIR/$TEMP_FILE
 	else
 		# migrate a single entity
 		echo "Reading $INPUT_TITLE Unified Catalog item from its title..."

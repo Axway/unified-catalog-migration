@@ -441,7 +441,7 @@ then
 	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME
 else
 	echo "Migrating $1 Unified Catalog item into Asset and Product"
-	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME $1
+	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "$1"
 fi
  
 echo "Done."

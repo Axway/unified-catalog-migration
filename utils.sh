@@ -198,7 +198,7 @@ function readMarketplaceUrlFromMarketplaceName {
 # Output: CENTRAL_URL is set           #
 ########################################
 function getCentralURL {
-set -x
+
 	if [[ $CENTRAL_URL == '' ]]
 	then
 		if [[ $ORGANIZATION_REGION == 'EU' ]]

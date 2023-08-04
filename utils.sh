@@ -173,7 +173,7 @@ function readMarketplaceUrlFromMarketplaceName {
 		# no, need to build the url based on subdomain and region
 		SUBDOMAIN=`echo $MP_INFO | jq -rc '.subdomain'`
 
-		if [[ $ORGANIZATION_REGION == 'FR' ]]
+		if [[ $ORGANIZATION_REGION == 'EU' ]]
 		then
 			# we are in France
 			RESULT=`echo "https://$SUBDOMAIN.marketplace.eu.axway.com"`

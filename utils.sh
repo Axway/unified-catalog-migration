@@ -198,10 +198,10 @@ function readMarketplaceUrlFromMarketplaceName {
 # Output: CENTRAL_URL is set           #
 ########################################
 function getCentralURL {
-
+set -x
 	if [[ $CENTRAL_URL == '' ]]
 	then
-		if [[ $ORGANIZATION_REGION == 'FR' ]]
+		if [[ $ORGANIZATION_REGION == 'EU' ]]
 		then
 			# we are in France
 			CENTRAL_URL="https://central.eu-fr.axway.com"

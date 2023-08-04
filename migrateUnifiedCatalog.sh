@@ -2,8 +2,6 @@
 
 # TODO: 
 # - add the sharing of catalog?
-# - catalog documentation?
-
 
 # Sourcing user-provided env properties
 source ./config/env.properties
@@ -41,7 +39,7 @@ function migrate() {
 	else
 		# migrate a single entity
 		echo "Reading $INPUT_TITLE Unified Catalog item from its title..."
-		axway central get consumeri -q "title=='$INPUT_TITLE'" -o json > $TEMP_DIR/$TEMP_FILE
+		axway central get consumeri -q "title=='$INPUT_TITLE'" -s $CENTRAL_ENVIRONMENT -o json > $TEMP_DIR/$TEMP_FILE
 	fi
 	error_exit "Cannot read catalog items"
 
@@ -60,7 +58,7 @@ function migrate() {
 		CATALOG_TAGS=$(echo $line | jq -r '.tags')
 
 		echo "Migrating $CONSUMER_INSTANCE_TITLE catalog item..."
-		#echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / $CONSUMER_INSTANCE_DESCRIPTION / apiService=$CATALOG_APISERVICE"
+		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / $CONSUMER_INSTANCE_DESCRIPTION / apiService=$CATALOG_APISERVICE"
 		
 		# Finding corresponding Unified Catalog 
 		echo "	Finding catalog item details..."
@@ -92,153 +90,171 @@ function migrate() {
 		echo "		Finding documentation..."
 		CATALOG_DOCUMENTATION=$(readCatalogDocumentationFromItsId "$CATALOG_ID")
 
-		#TODO - check if asset already exist to protect from executing twice or more
-		#echo "Reading all Assets items in the organization $PLATFORM_ORGID ..."
-		#axway central get assets -q metadata.references.name=="$CATALOG_APISERVICE" -o json > ./json_files/assets.json
-		#if [ -s ./json_files/assets.json ]; then
-			# The file is not-empty.
-			#echo "Assets exists, nothing to do"
-		#else
+		echo "	Checking if asset $CONSUMER_INSTANCE_TITLE already created..."
+		axway central get assets -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > ./json_files/asset-$CONSUMER_INSTANCE_NAME-exist.json
+		# file will never be empty but only contain [] if nothing found.
+		if [ `jq length ./json_files/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
+			# The file is empty.
+			echo "		Assetsexists, nothing to do"
+			# keep information
+			export ASSET_NAME=$(jq -r .[0].name $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json)
+		else
 			# Process.
-		#fi
+			echo "		Asset does not exist, we can create it"
 
-		# creating asset in Central
-		echo "	creating asset file..."
-		if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
-		then
-			echo "		without owner"
-			jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
-
-			if [[ $CATALOG_ICON == null ]]
+			# creating asset in Central
+			echo "	creating asset file..."
+			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
-				# remove the icon from the file - need an intermediate file :-( 
-				cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
-				mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				echo "		without owner"
+				jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+
+				if [[ $CATALOG_ICON == null ]]
+				then
+					# remove the icon from the file - need an intermediate file :-( 
+					cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
+					mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				fi
+			else
+				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+				jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+
+				if [[ $CATALOG_ICON == null ]]
+				then
+					# remove the icon from the file - need an intermediate file :-( 
+					cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
+					mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				fi
+
 			fi
+			error_exit "Problem when creating asset file" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
+
+			# adding tags .... TODO
+			echo "	SKIP - adding asset tags..."
+			#jq -n -f ./jq/asset.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg encodedImage "$CATALOG_IMAGE" --arg tags "$CATALOG_TAGS" > ./json_files/asset.json
+
+			echo "	Posting asset to Central..."
+			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json -o json -y > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-created.json
+			error_exit "Problem when posting asset icon"
+
+			# retrieve asset name since there could be naming conflict
+			export ASSET_NAME=$(jq -r .[0].name $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-created.json)
+
+			# adding the mapping to the service
+			echo "	Creating asset mapping for linking with API service..." 
+			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
+			echo "	Posting asset mapping to Central"
+			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
+			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
+		fi # asset exist?
+
+		# Do the same for product but not for subscription... It could help to solve Mercadona duplicate issues: https://jira.axway.com/browse/APIGOV-25743
+		echo "	Checking if product $CONSUMER_INSTANCE_TITLE already created..."
+		axway central get products -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json
+		# file will never be empty but only contain [] if nothing found.
+		if [ `jq length ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
+			# The file is empty.
+			echo "		Product exists, nothing to do"
+			# keep information
+			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json`
 		else
-			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-			jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+			# Process.
+			echo "		Product does not exist, we can create it"
 
-			if [[ $CATALOG_ICON == null ]]
+			# reading asset resource name (used for quota creation)
+			echo "	Reading the created asset resource name..."
+			export RESOURCE_NAME=`axway central get assetresource -s $ASSET_NAME -o json | jq -r .[].name`
+
+			# create the corresponding product
+			echo "	creating product file..." 
+			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
-				# remove the icon from the file - need an intermediate file :-( 
-				cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
-				mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				echo "		without owner"
+				jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+
+				if [[ $CATALOG_ICON == null ]]
+				then
+					# remove the icon from the file - need an intermediate file :-( 
+					cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
+					mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				fi
+			else
+				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+				jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+
+				if [[ $CATALOG_ICON == null ]]
+				then
+					# remove the icon from the file - need an intermediate file :-( 
+					cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
+					mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				fi
 			fi
+			echo "	Posting product to Central..."
+			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json
+			error_exit "Problem creating product" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json"
 
-		fi
-		error_exit "Problem when creating asset file" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
+			# retrieve product name since there could be naming conflict
+			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json`
 
-		# adding tags .... TODO
-		echo "	SKIP - adding asset tags..."
-		#jq -n -f ./jq/asset.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg encodedImage "$CATALOG_IMAGE" --arg tags "$CATALOG_TAGS" > ./json_files/asset.json
+			# Create Documentation
+			echo "	Adding product Documentation..." 
+			echo "		Creating article..."
+			export articleTitle="Unified Catalog doc"
+			articleContent=$CATALOG_DOCUMENTATION
+			export articleContent
+			jq -f ./jq/article.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json
+			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json
+			export ARTICLE_NAME_1=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json`
 
-		echo "	Posting asset to Central..."
-		axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json -o json -y > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-created.json
-		error_exit "Problem when posting asset icon"
+			error_exit "Problem creating an article" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json"
+			echo "		Creating Document..."
+			export docTitle="Product Overview"
+			axway central get resources -s $PRODUCT_NAME -q name==$ARTICLE_NAME_1 -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json
+			jq -f ./jq/document.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json
+			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json
+			error_exit "Problem creating a product document" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json"
 
-		# retrieve asset name since there could be naming conflict
-		export ASSET_NAME=$(jq -r .[0].name $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-created.json)
+			#activate product
+			echo "	Releasing the product..." 
+			jq -n -f ./jq/product-activation.jq --arg productName $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation.json
+			axway central axwayaxway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation-created.json
+			error_exit "Problem activating product" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation-created.json"
 
-		# adding the mapping to the service
-		echo "	Creating asset mapping for linking with API service..." 
-		jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
-		echo "	Posting asset mapping to Central"
-		axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
-		error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
-
-		# reading asset resource name (used for quota creation)
-		echo "	Reading the created asset resource name..."
-		export RESOURCE_NAME=`axway central get assetresource -s $ASSET_NAME -o json | jq -r .[].name`
-
-		# create the corresponding product
-		echo "	creating product file..." 
-		if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
-		then
-			echo "		without owner"
-			jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-
-			if [[ $CATALOG_ICON == null ]]
+			#  Create a Product Plan (Free)
+			echo "	Adding Free plan..." 
+			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
-				# remove the icon from the file - need an intermediate file :-( 
-				cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
-				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				echo "		without owner"
+				jq -n -f ./jq/product-plan-create.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
+			else
+				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+				jq -n -f ./jq/product-plan-create-owner.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
 			fi
-		else
-			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-			jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json
+			error_exit "Problem when creating a Product plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json"
 
-			if [[ $CATALOG_ICON == null ]]
-			then
-				# remove the icon from the file - need an intermediate file :-( 
-				cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
-				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-			fi
-		fi
-		echo "	Posting product to Central..."
-		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json
-		error_exit "Problem creating product" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json"
+			# retrieve product plan since there could be naming conflict
+			export PRODUCT_PLAN_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
+			export PRODUCT_PLAN_ID=`jq -r .[0].metadata.id $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
 
-		# retrieve product name since there could be naming conflict
-		export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json`
+			# Adding plan quota
+			echo "		Adding plan quota..."
+			jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
+			# update the quota limit - need to put it in the environment list so that jq can access the value.
+			PLAN_QUOTA=`echo $PLAN_QUOTA`
+			export PLAN_QUOTA
+			jq '.spec.pricing.limit.value=($ENV.PLAN_QUOTA|tonumber)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
+			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json
+			error_exit "Problem with creating Quota" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json"
 
-		# Create Documentation
-		echo "	Adding product Documentation..." 
-		echo "		Creating article..."
-		export articleTitle="Unified Catalog doc"
-		articleContent=$CATALOG_DOCUMENTATION
-		export articleContent
-		jq -f ./jq/article.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json
-		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json
-		export ARTICLE_NAME_1=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json`
+			# Activating the plan
+			echo "	Activating the plan..."
+			axway central get productplans $PRODUCT_PLAN_NAME -o json  | jq '.state = "active"' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
+			echo $(cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json | jq 'del(. | .status?, .references?)') > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
+			axway central apply -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json
+			error_exit "Problem activating the plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json"
 
-		error_exit "Problem creating an article" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json"
-		echo "		Creating Document..."
-		export docTitle="Product Overview"
-		axway central get resources -s $PRODUCT_NAME -q name==$ARTICLE_NAME_1 -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json
-		jq -f ./jq/document.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json
-		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json
-		error_exit "Problem creating a product document" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json"
-
-		#activate product
-		echo "	Releasing the product..." 
-		jq -n -f ./jq/product-activation.jq --arg productName $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation.json
-		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation-created.json
-		error_exit "Problem activating product" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-activation-created.json"
-
-		#  Create a Product Plan (Free)
-		echo "	Adding Free plan..." 
-		if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
-		then
-			echo "		without owner"
-			jq -n -f ./jq/product-plan-create.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
-		else
-			echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-			jq -n -f ./jq/product-plan-create-owner.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
-		fi
-		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json
-		error_exit "Problem when creating a Product plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json"
-
-		# retrieve product plan since there could be naming conflict
-		export PRODUCT_PLAN_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
-		export PRODUCT_PLAN_ID=`jq -r .[0].metadata.id $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
-
-		# Adding plan quota
-		echo "		Adding plan quota..."
-		jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
-		# update the quota limit - need to put it in the environment list so that jq can access the value.
-		PLAN_QUOTA=`echo $PLAN_QUOTA`
-		export PLAN_QUOTA
-		jq '.spec.pricing.limit.value=($ENV.PLAN_QUOTA|tonumber)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
-		axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json
-		error_exit "Problem with creating Quota" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json"
-
-		# Activating the plan
-		echo "	Activating the plan..."
-		axway central get productplans $PRODUCT_PLAN_NAME -o json  | jq '.state = "active"' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
-		echo $(cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json | jq 'del(. | .status?, .references?)') > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
-		axway central apply -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json
-		error_exit "Problem activating the plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json"
+		fi # product exist?
 
 		# do we need to publish to the marketpalces?
 		if [[ $PUBLISH_TO_MARKETPLACES == "Y" ]]

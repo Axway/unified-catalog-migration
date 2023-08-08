@@ -9,6 +9,7 @@ function error_exit {
       then
          echo "See $2 file for errors"
       fi
+	  error=1
       exit 1
    fi
 }
@@ -27,6 +28,7 @@ function error_post {
 		if [[ $errorFound != null ]]
 		then
 			echo "$1. Please check file $2"
+			error=1
 			exit 1
 		fi
 	fi

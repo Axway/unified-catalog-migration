@@ -4,13 +4,14 @@
 # - add the sharing of catalog?
 
 # Sourcing user-provided env properties
-source ./config/env.properties
+source ./config/envCB.properties
 
 # add all utility functions
 source ./utils.sh
 
 TEMP_FILE=objectToMigrate.json
 TEMP_DIR=./json_files
+error=0
 
 ####################################################
 # Creating asset and product based on Catalog Items
@@ -46,7 +47,7 @@ function migrate() {
 	echo "Found " `cat $TEMP_DIR/$TEMP_FILE | jq '.|length'` " catalog items to migrate."
 
 	# loop over the result and keep interesting data (name / description / API Service / Tags / Environment / Owner)
-	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, description: .spec.description, apiserviceName: .references.apiService, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
+	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, description: .spec.description, apiserviceName: .references.apiService, apiserviceRevision: .references.apiServiceRevision, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
 
 		CONSUMER_INSTANCE_ID=$(echo $line | jq -r '.id')
 		CONSUMER_INSTANCE_NAME=$(echo $line | jq -r '.name')
@@ -54,13 +55,14 @@ function migrate() {
 		CONSUMER_INSTANCE_DESCRIPTION=$(echo $line | jq -r '.description')
 		CONSUMER_INSTANCE_OWNER_ID=$(echo $line | jq -r '.ownerId')
 		CATALOG_APISERVICE=$(echo $line | jq -r '.apiserviceName')
+		CATALOG_APISERVICE_REVISION=$(echo $line | jq -r '.apiserviceRevision')
 		CATALOG_APISERVICEENV=$(echo $line | jq -r '.environment')
 		CATALOG_TAGS=$(echo $line | jq -r '.tags')
 
 		echo "Migrating $CONSUMER_INSTANCE_TITLE catalog item..."
 		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / $CONSUMER_INSTANCE_DESCRIPTION / apiService=$CATALOG_APISERVICE"
 		
-		# Finding corresponding Unified Catalog 
+		# Finding corresponding Unified Catalog - multple catalog can have same name but only one is linked to the consumerInstance using the latestVersion attribute
 		echo "	Finding catalog item details..."
 		echo "		Finding ID..."
 		# query format section: query=(name=='VALUE') -> replace ( and ) by their respective HTML value
@@ -69,7 +71,9 @@ function migrate() {
 		# replace spaces with %20 in case the Catalog name has some
 		URL=${URL// /%20}
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
-		CATALOG_ID=`cat $TEMP_DIR/catalogItem.json | jq -r ".[0] | .id"`
+
+		#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
+		CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
 		echo "			CatID=$CATALOG_ID"
 
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription' 
@@ -152,7 +156,8 @@ function migrate() {
 		echo "	Checking if product $CONSUMER_INSTANCE_TITLE already created..."
 		axway central get products -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
-		if [ `jq length ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
+		if [ `jq length ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]
+		then
 			# The file is empty.
 			echo "		Product exists, nothing to do"
 			# keep information
@@ -264,20 +269,26 @@ function migrate() {
 			MP_URL=$(readMarketplaceUrlFromMarketplaceName)
 			MP_GUID=$(readMarketplaceGuidFromMarketplaceName)
 
-			# TODO - Manage publication to all Marketplaces?
-			echo "		Publishing $PRODUCT_NAME to Marketplace $MARKETPLACE_TITLE ($MP_GUID)..."
-			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
-			then
-				echo "		without owner"
-				jq -n -f ./jq/product-publish-create.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
-			else
-				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/product-publish-create-owner.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
-			fi
-			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json
-			error_exit "Problem with pubishing a Product on Marketplace" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json"
-			echo "		$PRODUCT_NAME published to Marketplace $MARKETPLACE_TITLE"
+			echo "	Checking that $CONSUMER_INSTANCE_TITLE is not already published to $MARKETPLACE_TITLE..."
+			# check the product is not already published for this Marketplace
+			axway central get publishedproduct -s $MP_GUID -q "metadata.references.name=="$PRODUCT_NAME";metadata.references.kind==product" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-published.json
 
+			if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-published.json` == 0 ]
+			then
+				# TODO - Manage publication to all Marketplaces?
+				echo "		Publishing $CONSUMER_INSTANCE_NAME to Marketplace $MARKETPLACE_TITLE ($MP_GUID)..."
+				if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
+				then
+					echo "		without owner"
+					jq -n -f ./jq/product-publish-create.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
+				else
+					echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+					jq -n -f ./jq/product-publish-create-owner.jq --arg marketplace_name $MP_GUID --arg product_name $PRODUCT_NAME  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json
+				fi
+				axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json
+				error_exit "Problem with pubishing a Product on Marketplace" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json"
+				echo "		$PRODUCT_NAME published to Marketplace $MARKETPLACE_TITLE"
+			fi
 			#TODO - ask whether or not to create subscription?
 
 			##########
@@ -297,7 +308,7 @@ function migrate() {
 				SUBSCRIPTION_OWNING_TEAM=$(echo $line | jq -r '.teamId')
 				SUBSCRIPTION_APP_NAME=$(echo $line | jq -r '.appName')
 
-				echo "		Need to migrate subscription ($SUBSCRIPTION_NAME) for team ($SUBSCRIPTION_OWNING_TEAM) using application ($SUBSCRIPTION_APP_NAME) to marketplace ($MARKETPLACE_NAME)"
+				echo "		Need to migrate subscription ($SUBSCRIPTION_NAME) for team ($SUBSCRIPTION_OWNING_TEAM) using application ($SUBSCRIPTION_APP_NAME) to marketplace ($MARKETPLACE_TITLE)"
 
 				echo "			Searching product id in marketplace..."
 				SANITIZE_CATALOG_NAME=${CONSUMER_INSTANCE_TITLE// /%20}
@@ -377,14 +388,20 @@ function migrate() {
 
 		fi # Publish to Marketplace
 		
-		# clean up current loop...
+		# clean up current loop if no error happened...
 		echo "	cleaning temp files..."
-		rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
+		if [[ $error == 0 ]]
+		then
+			rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
+		fi
 
 	done # loop over catalog items
 
 	# clean up catalog item files
-	rm $TEMP_DIR/*
+	if [[ $error == 0 ]]
+	then
+		rm $TEMP_DIR/*
+	fi
 
 }
 

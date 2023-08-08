@@ -3,7 +3,7 @@
 #set -x
 
 # Sourcing user-provided env properties
-source ../config/env.properties
+source ../config/envCB.properties
 
 # source main file to access the function
 source ../utils.sh
@@ -23,12 +23,30 @@ function loginToPlatform {
 }
 
 function testReadingCatalogDocumentation {
-	
-#	CATALOG_NAME="SpaceX Graphql APIs"
-	CATALOG_NAME="nytimes (v7-emt)"
+
+	loginToPlatform
+
+	CATALOG_ID="8ac983148850862e0189d16ead1a20d2"
 	echo "	Reading Catalog documentation"
-	articleContent=$(readCatalogDocumentation "$CATALOG_NAME")
-	echo $articleContent
+	articleContent=$(readCatalogDocumentationFromItsId "$CATALOG_ID" "TEMP VALUE FOR TEST")
+	
+	if [[ $articleContent == "TEMP VALUE FOR TEST" ]]
+	then 
+		echo $articleContent
+	else
+		echo "Something is wrong"
+		exit 1
+	fi
+
+	articleContent=$(readCatalogDocumentationFromItsId "$CATALOG_ID" "")
+	
+	if [[ $articleContent == "" ]]
+	then
+		echo "No documentation found"
+	else
+		echo "Something is wrong"
+		exit 1
+	fi
 }
 
 function testGetApiServiceInstanceOrdered {
@@ -51,6 +69,31 @@ function testGetApiServiceInstanceOrdered {
 	fi
 }
 
+function testReadingCatalogSubscription {
+
+	loginToPlatform
+
+	CONSUMER_INSTANCE_TITLE="pets3"
+
+	axway central get consumeri -q "title=='$CONSUMER_INSTANCE_TITLE'" -s $CENTRAL_ENVIRONMENT -o json > $TEMP_DIR/consumeri.json
+	CATALOG_APISERVICE_REVISION=`cat $TEMP_DIR/consumeri.json | jq -rc ".[0].references.apiServiceRevision"`
+
+	CENTRAL_URL=$(getCentralURL)
+	URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE'%27%29&' 
+	# replace spaces with %20 in case the Catalog name has some
+	URL=${URL// /%20}
+	#echo curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN
+	curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
+	
+	#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
+	CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
+	
+	# now read the catalog ID
+	echo "			CatID=$CATALOG_ID"
+
+	URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription' 
+	curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem2.json
+}
 
 function sanitizeParenthesisAndSpace {
 
@@ -204,12 +247,13 @@ function testMarketplaceAPIs {
 	loginToPlatform
 
 	MP_URL=$(readMarketplaceUrlFromMarketplaceName)
+	echo "MP_URL=$MP_URL"
 
 	#echo "	Testing the MP product search..."
-	CATALOG_TITLE="nytimes (v7-emt)"
-	SANITIZE_CATALOG_TITLE=${CATALOG_TITLE// /%20}
-	PRODUCT_ID=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_TITLE&sort=-lastVersion.metadata.createdAt%2C%2Bname" ".items[0].id")
-	echo "		Found product:" $PRODUCT_ID
+#	CATALOG_TITLE="nytimes (v7-emt)"
+#	SANITIZE_CATALOG_TITLE=${CATALOG_TITLE// /%20}
+#	PRODUCT_ID=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_TITLE&sort=-lastVersion.metadata.createdAt%2C%2Bname" ".items[0].id")
+#	echo "		Found product:" $PRODUCT_ID
 
 #	echo "	Testing the MP product version search..."
 #	CONTENT=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_NAME&sort=-lastVersion.metadata.createdAt%2C%2Bname")
@@ -370,6 +414,18 @@ function testGetCentralUrl {
 }
 
 
+function testDescriptionLength {
+
+	CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItem2.json | jq -r ".description"`
+	echo "1: $CATALOG_DESCRIPTION"
+
+	sed 's/\\n/\'$'\n''/g' <<< $CATALOG_DESCRIPTION > $TEMP_DIR/catalogItemDescriptionCleaned.txt
+	CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItemDescriptionCleaned.txt`
+
+	echo "2: $CATALOG_DESCRIPTION"
+
+}
+
 ##########################
 ####### START HERE #######
 ##########################
@@ -381,7 +437,9 @@ function testGetCentralUrl {
 #	echo "Paramter; $1"
 #fi
 
+testDescriptionLength
 #testReadingCatalogDocumentation
+#testReadingCatalogSubscription
 #testCURL
 #testOwner
 #testNoOwner

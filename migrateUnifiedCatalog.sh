@@ -9,7 +9,7 @@ source ./config/env.properties
 # add all utility functions
 source ./utils.sh
 
-TEMP_FILE=objectToMigrate.json
+TEMP_FILE=catalogItemToMigrate.json
 TEMP_DIR=./json_files
 error=0
 
@@ -100,9 +100,9 @@ function migrate() {
 		CATALOG_DOCUMENTATION=$(readCatalogDocumentationFromItsId "$CATALOG_ID" $CATALOG_DESCRIPTION)
 	
 		echo "	Checking if asset $CONSUMER_INSTANCE_TITLE already created..."
-		axway central get assets -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > ./json_files/asset-$CONSUMER_INSTANCE_NAME-exist.json
+		axway central get assets -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
-		if [ `jq length ./json_files/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
+		if [ `jq length $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
 			# The file is empty.
 			echo "		Assetsexists, nothing to do"
 			# keep information
@@ -140,7 +140,7 @@ function migrate() {
 
 			# adding tags .... TODO
 			echo "	SKIP - adding asset tags..."
-			#jq -n -f ./jq/asset.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg encodedImage "$CATALOG_IMAGE" --arg tags "$CATALOG_TAGS" > ./json_files/asset.json
+			#jq -n -f ./jq/asset.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg encodedImage "$CATALOG_IMAGE" --arg tags "$CATALOG_TAGS" > $TEMP_DIR/asset.json
 
 			echo "	Posting asset to Central..."
 			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json -o json -y > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-created.json
@@ -159,9 +159,9 @@ function migrate() {
 
 		# Do the same for product but not for subscription... It could help to solve Mercadona duplicate issues: https://jira.axway.com/browse/APIGOV-25743
 		echo "	Checking if product $CONSUMER_INSTANCE_TITLE already created..."
-		axway central get products -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json
+		axway central get products -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
-		if [ `jq length ./json_files/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]
+		if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]
 		then
 			# The file is empty.
 			echo "		Product exists, nothing to do"
@@ -409,7 +409,8 @@ function migrate() {
 	# clean up catalog item files
 	if [[ $error == 0 ]]
 	then
-		echo "rm $TEMP_DIR/*"
+		rm $TEMP_DIR/catalog*
+		rm $TEMP_DIR/*arketplace*
 	fi
 
 }

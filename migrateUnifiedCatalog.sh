@@ -4,7 +4,7 @@
 # - add the sharing of catalog?
 
 # Sourcing user-provided env properties
-source ./config/envCB.properties
+source ./config/env.properties
 
 # add all utility functions
 source ./utils.sh
@@ -47,12 +47,11 @@ function migrate() {
 	echo "Found " `cat $TEMP_DIR/$TEMP_FILE | jq '.|length'` " catalog items to migrate."
 
 	# loop over the result and keep interesting data (name / description / API Service / Tags / Environment / Owner)
-	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, description: .spec.description, apiserviceName: .references.apiService, apiserviceRevision: .references.apiServiceRevision, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
+	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, apiserviceName: .references.apiService, apiserviceRevision: .references.apiServiceRevision, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
 
 		CONSUMER_INSTANCE_ID=$(echo $line | jq -r '.id')
 		CONSUMER_INSTANCE_NAME=$(echo $line | jq -r '.name')
 		CONSUMER_INSTANCE_TITLE=$(echo $line | jq -r '.title')
-		CONSUMER_INSTANCE_DESCRIPTION=$(echo $line | jq -r '.description')
 		CONSUMER_INSTANCE_OWNER_ID=$(echo $line | jq -r '.ownerId')
 		CATALOG_APISERVICE=$(echo $line | jq -r '.apiserviceName')
 		CATALOG_APISERVICE_REVISION=$(echo $line | jq -r '.apiserviceRevision')
@@ -60,7 +59,7 @@ function migrate() {
 		CATALOG_TAGS=$(echo $line | jq -r '.tags')
 
 		echo "Migrating $CONSUMER_INSTANCE_TITLE catalog item..."
-		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / $CONSUMER_INSTANCE_DESCRIPTION / apiService=$CATALOG_APISERVICE"
+		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / apiService=$CATALOG_APISERVICE"
 		
 		# Finding corresponding Unified Catalog - multple catalog can have same name but only one is linked to the consumerInstance using the latestVersion attribute
 		echo "	Finding catalog item details..."
@@ -72,10 +71,12 @@ function migrate() {
 		URL=${URL// /%20}
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 
+
 		#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
 		CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
 		echo "			CatID=$CATALOG_ID"
 
+		# read catalog details
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription' 
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 
@@ -92,8 +93,12 @@ function migrate() {
 		fi
 
 		echo "		Finding documentation..."
-		CATALOG_DOCUMENTATION=$(readCatalogDocumentationFromItsId "$CATALOG_ID")
-
+		CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItem.json | jq -r ".description"`
+		# replace \n with newline
+		sed 's/\\n/\'$'\n''/g' <<< $CATALOG_DESCRIPTION > $TEMP_DIR/catalogItemDescriptionCleaned.txt
+		CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItemDescriptionCleaned.txt`
+		CATALOG_DOCUMENTATION=$(readCatalogDocumentationFromItsId "$CATALOG_ID" $CATALOG_DESCRIPTION)
+	
 		echo "	Checking if asset $CONSUMER_INSTANCE_TITLE already created..."
 		axway central get assets -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > ./json_files/asset-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
@@ -111,7 +116,7 @@ function migrate() {
 			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
 				echo "		without owner"
-				jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
 
 				if [[ $CATALOG_ICON == null ]]
 				then
@@ -121,7 +126,7 @@ function migrate() {
 				fi
 			else
 				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
 
 				if [[ $CATALOG_ICON == null ]]
 				then
@@ -172,10 +177,11 @@ function migrate() {
 
 			# create the corresponding product
 			echo "	creating product file..." 
+			echo " For debug=$CATALOG_DESCRIPTION"
 			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
 				echo "		without owner"
-				jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
 
 				if [[ $CATALOG_ICON == null ]]
 				then
@@ -185,7 +191,7 @@ function migrate() {
 				fi
 			else
 				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
 
 				if [[ $CATALOG_ICON == null ]]
 				then
@@ -202,22 +208,25 @@ function migrate() {
 			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json`
 
 			# Create Documentation
-			echo "	Adding product Documentation..." 
-			echo "		Creating article..."
-			export articleTitle="Unified Catalog doc"
-			articleContent=$CATALOG_DOCUMENTATION
-			export articleContent
-			jq -f ./jq/article.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json
-			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json
-			export ARTICLE_NAME_1=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json`
+			if [[ CATALOG_DOCUMENTATION != "" ]]
+			then
+				echo "	Adding product Documentation..." 
+				echo "		Creating article..."
+				export articleTitle="Unified Catalog doc"
+				articleContent=$CATALOG_DOCUMENTATION
+				export articleContent
+				jq -f ./jq/article.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json
+				axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json
+				export ARTICLE_NAME_1=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json`
 
-			error_exit "Problem creating an article" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json"
-			echo "		Creating Document..."
-			export docTitle="Product Overview"
-			axway central get resources -s $PRODUCT_NAME -q name==$ARTICLE_NAME_1 -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json
-			jq -f ./jq/document.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json
-			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json
-			error_exit "Problem creating a product document" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json"
+				error_exit "Problem creating an article" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-article-created.json"
+				echo "		Creating Document..."
+				export docTitle="Product Overview"
+				axway central get resources -s $PRODUCT_NAME -q name==$ARTICLE_NAME_1 -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json
+				jq -f ./jq/document.jq $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-available-articles.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json
+				axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json
+				error_exit "Problem creating a product document" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-document-created.json"
+			fi
 
 			#activate product
 			echo "	Releasing the product..." 
@@ -400,7 +409,7 @@ function migrate() {
 	# clean up catalog item files
 	if [[ $error == 0 ]]
 	then
-		rm $TEMP_DIR/*
+		echo "rm $TEMP_DIR/*"
 	fi
 
 }

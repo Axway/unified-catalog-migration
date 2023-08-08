@@ -105,23 +105,35 @@ function postToMarketplace() {
 # Getting the Unified Catalog Documentation
 # Always read the 1st revision
 # $1: CATALOG_ID
+# $2: CATALOG_DESCRIPTION value
+#
+# Return catalog documention if not null, 
+# otherwise the catalog description ($2)
 ############################################
 function readCatalogDocumentationFromItsId() {
 
 	# variable assignment
 	CATALOG_ID=$1
+	RETURN_VALUE=$2
 
 	# Get catalog documentation property
 	URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/revisions/1/properties/documentation'
 	curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemDocumentation.txt
-	
+
 	# remove 1st and last " from the string
 	cat $TEMP_DIR/catalogItemDocumentation.txt | cut -d "\"" -f 2 > $TEMP_DIR/catalogItemDocumentationAfterCut.txt
 	DOC_TEMP=`cat $TEMP_DIR/catalogItemDocumentationAfterCut.txt`
 
 	# replace \n with newline
 	sed 's/\\n/\'$'\n''/g' <<< $DOC_TEMP > $TEMP_DIR/catalogItemDocumentationCleaned.txt
-	cat $TEMP_DIR/catalogItemDocumentationCleaned.txt
+	DOC_TEMP=`cat $TEMP_DIR/catalogItemDocumentationCleaned.txt`
+
+	if [[ $DOC_TEMP != "" ]]
+	then
+		RETURN_VALUE=$DOC_TEMP
+	fi
+
+	echo $RETURN_VALUE
 }
 
 

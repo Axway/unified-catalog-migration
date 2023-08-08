@@ -131,13 +131,18 @@ function readCatalogDocumentationFromItsId() {
 # {"guid": "guidValue", "url": "urlValue", "subdomain": "subDomainValue"} #
 ###########################################################################
 function readMarketplaceInformation {
+set -x
+	# Get MARKETPLACE_URL property
+	if [[ $PLATFORM_URL == '' ]]
+	then
+		# use the default PROD url
+		PLATFORM_URL="https://platform.axway.com"	
+	fi
 
-	# Get catalog documentation property
-	URL='https://platform.axway.com/api/v1/provider?org_guid='$PLATFORM_ORGID
-
+	URL=$PLATFORM_URL'/api/v1/provider?org_guid='$PLATFORM_ORGID
 	curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/marketplaceList.json
+	MP_INFO=`jq --arg FILTER_VALUE "$MARKETPLACE_TITLE" -r '.result[] | select(.name==$FILTER_VALUE)' $TEMP_DIR/marketplaceList.json | jq -rc '{guid: .guid, url: .url, subdomain: .subdomain}'`
 
-	MP_INFO=`cat $TEMP_DIR/marketplaceList.json | jq -rc '.result[] | select(.name == env.MARKETPLACE_TITLE)' | jq -rc '{guid: .guid, url: .url, subdomain: .subdomain}'`
 	echo $MP_INFO
 }
 
@@ -173,20 +178,29 @@ function readMarketplaceUrlFromMarketplaceName {
 		# no, need to build the url based on subdomain and region
 		SUBDOMAIN=`echo $MP_INFO | jq -rc '.subdomain'`
 
-		if [[ $ORGANIZATION_REGION == 'EU' ]]
+		if [[ $MP_EXTENSION == '' ]]
 		then
-			# we are in France
-			RESULT=`echo "https://$SUBDOMAIN.marketplace.eu.axway.com"`
-		else 
-			if [[ $ORGANIZATION_REGION == 'AP' ]]
+			# uses PROD known values
+			if [[ $ORGANIZATION_REGION == 'EU' ]]
 			then
-				# we are in APAC
-				RESULT=`echo "https://$SUBDOMAIN.marketplace.ap-sg.axway.com"`
-			else
-				# Default US region
-				RESULT=`echo "https://$SUBDOMAIN.marketplace.us.axway.com"`
+				# we are in EU
+				RESULT=`echo "https://$SUBDOMAIN.marketplace.eu.axway.com"`
+			else 
+				if [[ $ORGANIZATION_REGION == 'AP' ]]
+				then
+					# we are in APAC
+					RESULT=`echo "https://$SUBDOMAIN.marketplace.ap-sg.axway.com"`
+				else
+					# Default US region
+					RESULT=`echo "https://$SUBDOMAIN.marketplace.us.axway.com"`
+				fi
 			fi
+
+		else
+			# uses provided extension
+			RESULT=`echo "https://$SUBDOMAIN.$MP_EXTENSION"`
 		fi
+
 	fi
 	echo $RESULT
 }

@@ -131,7 +131,7 @@ function readCatalogDocumentationFromItsId() {
 # {"guid": "guidValue", "url": "urlValue", "subdomain": "subDomainValue"} #
 ###########################################################################
 function readMarketplaceInformation {
-set -x
+
 	# Get MARKETPLACE_URL property
 	if [[ $PLATFORM_URL == '' ]]
 	then

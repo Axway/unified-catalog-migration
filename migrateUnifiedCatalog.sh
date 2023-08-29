@@ -74,22 +74,24 @@ function migrate() {
 
 		#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
 		CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
-		echo "			CatID=$CATALOG_ID"
+		echo "			CatalogID=$CATALOG_ID"
 
 		# read catalog details
-		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription' 
+		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription,categories' 
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 
 		echo "		Finding icon..."
 		CATALOG_ICON=`cat $TEMP_DIR/catalogItem.json | jq -r "._embedded.image.base64"`
-		if [[ $CATALOG_ICON = null ]]
+		if [[ $CATALOG_ICON != null ]]
 		then
-			# Fake value that will be remove when creating the asset & product json files
-			CATALOG_ICON_INFO="_"
-			echo "			No icon found."
-		else
 			echo "			Icon found."
 			CATALOG_ICON_CONTENT="data:image/png;base64,"$CATALOG_ICON
+			# building manually to avoid issue with big image and command line being too short.
+			CATALOG_ICON_CONTENT="{\"icon\": \"$CATALOG_ICON_CONTENT\"}"
+
+			echo "			Creating icon json file for later."
+			echo $CATALOG_ICON_CONTENT > $TEMP_DIR/asset-product-$CONSUMER_INSTANCE_NAME-icon.json
+			error_exit "Error while creating icon file $TEMP_DIR/asset-product-$CONSUMER_INSTANCE_NAME-icon.json"
 		fi
 
 		echo "		Finding documentation..."
@@ -98,13 +100,40 @@ function migrate() {
 		sed 's/\\n/\'$'\n''/g' <<< $CATALOG_DESCRIPTION > $TEMP_DIR/catalogItemDescriptionCleaned.txt
 		CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItemDescriptionCleaned.txt`
 		CATALOG_DOCUMENTATION=$(readCatalogDocumentationFromItsId "$CATALOG_ID" $CATALOG_DESCRIPTION)
-	
+
+		echo "		Finding categories..."
+		CATALOG_CATEGORIES=""
+
+		cat $TEMP_DIR/catalogItem.json | jq -r "._embedded.categories[].externalId" > $TEMP_DIR/catalogItemCategoryId.txt
+
+		if [ -s $TEMP_DIR/catalogItemCategoryId.txt ]; then
+			# file exist and is not empty
+			i=0
+			# for  each Id, find the category name	
+			while read -r catId ; do
+				CAT_ID=`axway central get category -q "metadata.id==$catId" -o json | jq  ".[].name"`
+
+				if [[ $i == 0 ]]
+				then
+					CATALOG_CATEGORIES=$CAT_ID
+					i=$(( i + 1 ))
+				else
+					TMP=$CATALOG_CATEGORIES","$CAT_ID
+					CATALOG_CATEGORIES=$TMP
+				fi
+
+			done <<< `cat $TEMP_DIR/catalogItemCategoryId.txt`
+			echo "			categories found = $CATALOG_CATEGORIES"
+		else
+			echo "			no categories found!"
+		fi
+
 		echo "	Checking if asset $CONSUMER_INSTANCE_TITLE already created..."
-		axway central get assets -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json
+		axway central get assets -q "title=='$CONSUMER_INSTANCE_TITLE';metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
 			# The file is empty.
-			echo "		Assetsexists, nothing to do"
+			echo "		Assets exists, nothing to do"
 			# keep information
 			export ASSET_NAME=$(jq -r .[0].name $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json)
 		else
@@ -116,31 +145,25 @@ function migrate() {
 			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
 				echo "		without owner"
-				jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
-
-				if [[ $CATALOG_ICON == null ]]
-				then
-					# remove the icon from the file - need an intermediate file :-( 
-					cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
-					mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
-				fi
+				jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				error_exit "Error while creating asset file $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
 			else
 				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
-
-				if [[ $CATALOG_ICON == null ]]
-				then
-					# remove the icon from the file - need an intermediate file :-( 
-					cat $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json
-					mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
-				fi
-
+				jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				error_exit "Error while creating asset file $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
 			fi
-			error_exit "Problem when creating asset file" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
 
 			# adding tags .... TODO
 			echo "	SKIP - adding asset tags..."
 			#jq -n -f ./jq/asset.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CONSUMER_INSTANCE_DESCRIPTION" --arg encodedImage "$CATALOG_IMAGE" --arg tags "$CATALOG_TAGS" > $TEMP_DIR/asset.json
+
+			# adding icon
+			if [[ $CATALOG_ICON != null ]]
+			then
+				echo "	merging icon with asset content..."
+				jq -s '.[0] as $a | .[1] as $b | $a * $b' $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json $TEMP_DIR/asset-product-$CONSUMER_INSTANCE_NAME-icon.json  > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-tmp.json
+				mv $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-tmp.json $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+			fi
 
 			echo "	Posting asset to Central..."
 			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json -o json -y > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-created.json
@@ -159,7 +182,7 @@ function migrate() {
 
 		# Do the same for product but not for subscription... It could help to solve Mercadona duplicate issues: https://jira.axway.com/browse/APIGOV-25743
 		echo "	Checking if product $CONSUMER_INSTANCE_TITLE already created..."
-		axway central get products -q "title=="$CONSUMER_INSTANCE_TITLE";metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json
+		axway central get products -q "title=='$CONSUMER_INSTANCE_TITLE';metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]
 		then
@@ -177,29 +200,36 @@ function migrate() {
 
 			# create the corresponding product
 			echo "	creating product file..." 
-			echo " For debug=$CATALOG_DESCRIPTION"
 			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
 				echo "		without owner"
-				jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-
-				if [[ $CATALOG_ICON == null ]]
-				then
-					# remove the icon from the file - need an intermediate file :-( 
-					cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
-					mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-				fi
+				jq -n -f ./jq/product-create.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CATALOG_DESCRIPTION" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				error_exit "Error while creating product file $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json"
 			else
 				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CATALOG_DESCRIPTION" --arg icon "$CATALOG_ICON_CONTENT"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-
-				if [[ $CATALOG_ICON == null ]]
-				then
-					# remove the icon from the file - need an intermediate file :-( 
-					cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json | jq 'del(.icon)' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json
-					mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-temp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
-				fi
+				jq -n -f ./jq/product-create-owner.jq --arg product_title "$CONSUMER_INSTANCE_TITLE" --arg asset_name "$ASSET_NAME" --arg description "$CATALOG_DESCRIPTION"  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				error_exit "Error while creating product file $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json"
 			fi
+
+			# adding categories
+			if [[ $CATALOG_CATEGORIES != "" ]]
+			then
+				echo "		Add categories..."
+				# add the values into a file based on jq template (jq --arg does not work well with variable as it removes the " surondings the string)
+				sed "s/__CAT_LIST__/$CATALOG_CATEGORIES/g" ./jq/category.jq > $TEMP_DIR/pdtCategories.json
+				# merge it with product
+				jq -s '.[0] as $a | .[1] as $b | $a * $b' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json $TEMP_DIR/pdtCategories.json  > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-category.json
+				cp $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-category.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			fi 
+
+			# adding icon
+			if [[ $CATALOG_ICON != null ]]
+			then
+				echo "	merging icon with product content..."
+				jq -s '.[0] as $a | .[1] as $b | $a * $b' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json $TEMP_DIR/asset-product-$CONSUMER_INSTANCE_NAME-icon.json  > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json
+				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			fi
+
 			echo "	Posting product to Central..."
 			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json
 			error_exit "Problem creating product" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-created.json"
@@ -399,7 +429,7 @@ function migrate() {
 		
 		# clean up current loop if no error happened...
 		echo "	cleaning temp files..."
-		if [[ $error == 0 ]]
+		if [[ $error == 0 ]] # does not work all the time as we set the error inside a loop /!\
 		then
 			rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
 		fi
@@ -411,6 +441,7 @@ function migrate() {
 	then
 		rm $TEMP_DIR/catalog*
 		rm $TEMP_DIR/*arketplace*
+		rm $TEMP_DIR/pdtCategories.json
 	fi
 
 }

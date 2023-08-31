@@ -56,6 +56,7 @@ The following table show how the properties from the Unified Catalog object are 
 |                                      |                      |               |                          |                         |
 | **CatalogItem (= consumerInstance)** |                      |               |                          |                         |
 |  Image/base64                        | Icon                 | Icon          |                          |                         |
+|  Categorie(s)                        |                      | Categorie(s)  |                          |                         |
 |                                      |                      |               |                          |                         |
 | **CatalogItemDocumentation**         |                      |               |                          |                         |
 |  Value                               |                      | Article       |                          |                         |
@@ -81,7 +82,6 @@ Migrating a single catalog item link to an environment:
 
 ## Known limitations
 
-* Categories from Unified Catalog are not added as a Product Category
 * Tags from the Unified Catalog are not added to the product
 * No product visibility set based on the catalog item sharing
 * Product can be publish in only one Marketplace

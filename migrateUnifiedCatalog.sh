@@ -59,29 +59,34 @@ function migrate() {
 		CATALOG_TAGS=$(echo $line | jq -r '.tags')
 
 		echo "Migrating $CONSUMER_INSTANCE_TITLE catalog item..."
-		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / apiService=$CATALOG_APISERVICE"
+		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / apiService=$CATALOG_APISERVICE / apiServiceRevision=$CATALOG_APISERVICE_REVISION"
 		
 		# Finding corresponding Unified Catalog - multple catalog can have same name but only one is linked to the consumerInstance using the latestVersion attribute
 		echo "	Finding catalog item details..."
 		echo "		Finding ID..."
 		# query format section: query=(name=='VALUE') -> replace ( and ) by their respective HTML value
 		CENTRAL_URL=$(getCentralURL)
-		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE'%27%29&' 
+		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE'%27%29' 
 		# replace spaces with %20 in case the Catalog name has some
 		URL=${URL// /%20}
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 
-
-		#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
-		CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
+		# Are there multiple version?
+		if [[ `jq length $TEMP_DIR/catalogItem.json` == 1 ]]
+		then
+			CATALOG_ID=`jq -r ".[0].id" $TEMP_DIR/catalogItem.json`
+		else
+			#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
+			CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
+		fi
 		echo "			CatalogID=$CATALOG_ID"
 
 		# read catalog details
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription,categories' 
-		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
+		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemDetails.json
 
 		echo "		Finding icon..."
-		CATALOG_ICON=`cat $TEMP_DIR/catalogItem.json | jq -r "._embedded.image.base64"`
+		CATALOG_ICON=`cat $TEMP_DIR/catalogItemDetails.json | jq -r "._embedded.image.base64"`
 		if [[ $CATALOG_ICON != null ]]
 		then
 			echo "			Icon found."
@@ -95,7 +100,7 @@ function migrate() {
 		fi
 
 		echo "		Finding documentation..."
-		CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItem.json | jq -r ".description"`
+		CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".description"`
 		# replace \n with newline
 		sed 's/\\n/\'$'\n''/g' <<< $CATALOG_DESCRIPTION > $TEMP_DIR/catalogItemDescriptionCleaned.txt
 		CATALOG_DESCRIPTION=`cat $TEMP_DIR/catalogItemDescriptionCleaned.txt`
@@ -104,7 +109,7 @@ function migrate() {
 		echo "		Finding categories..."
 		CATALOG_CATEGORIES=""
 
-		cat $TEMP_DIR/catalogItem.json | jq -r "._embedded.categories[].externalId" > $TEMP_DIR/catalogItemCategoryId.txt
+		cat $TEMP_DIR/catalogItemDetails.json | jq -r "._embedded.categories[].externalId" > $TEMP_DIR/catalogItemCategoryId.txt
 
 		if [ -s $TEMP_DIR/catalogItemCategoryId.txt ]; then
 			# file exist and is not empty

@@ -81,6 +81,12 @@ function migrate() {
 		fi
 		echo "			CatalogID=$CATALOG_ID"
 
+		if [[ $CATALOG_ID == null ]]
+		then
+			echo " /!\ error while retrieving the CATALOG_ID."
+			exit 1
+		fi
+
 		# read catalog details
 		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'?embed=image,properties,revisions,subscription,categories' 
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemDetails.json

@@ -22,6 +22,5 @@
 	"access": {
         "approval": "automatic"
     },
-    "icon": $icon,
 	"state": "draft"
 }

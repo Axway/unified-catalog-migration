@@ -19,5 +19,4 @@
 	"tags": [
 		"Migrated from Unified Catalog"
 	],
-    "icon": $icon,
 }

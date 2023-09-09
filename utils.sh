@@ -56,6 +56,27 @@ function create_stage_if_not_exist() {
 	fi
 }
 
+#################################################
+# Creating a product plan unit if non available #
+################################################
+function create_productplanunit_if_not_exist() {
+
+	# Adding a product plan unit if not exisiting
+	export PLAN_UNIT_COUNT=$(axway central get productplanunit -q title=="\"$PLAN_UNIT_NAME\"" -o json | jq '.|length')
+
+	if [ $PLAN_UNIT_COUNT -eq 0 ]
+	then
+		echo "	Creating new plan unit..."
+		jq -n -f ./jq/product-plan-unit.jq --arg name "$PLAN_UNIT_NAME" --arg title "$PLAN_UNIT_NAME" > ./json_files/product-plan-unit.json
+		axway central create -f ./json_files/product-plan-unit.json -o json -y > $TEMP_DIR/product-plan-unit-created.json
+		error_exit "Problem creating a product plan unit" "$TEMP/product-plan-unit-created.json"
+	else 
+		echo "	Found existing plan unit: $PLAN_UNIT_NAME"
+	fi
+}
+
+
+
 ##########################################################
 # Getting data from the marketplace                      #
 # either return the entire object or the portion         #

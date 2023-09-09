@@ -294,7 +294,7 @@ function migrate() {
 
 			# Adding plan quota
 			echo "		Adding plan quota..."
-			jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
+			jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg unit $PLAN_UNIT_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
 			# update the quota limit - need to put it in the environment list so that jq can access the value.
 			PLAN_QUOTA=`echo $PLAN_QUOTA`
 			export PLAN_QUOTA
@@ -443,7 +443,7 @@ function migrate() {
 		if [[ $error == 0 ]] # does not work all the time as we set the error inside a loop /!\
 		then
 			rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
-		fi
+					fi
 
 	done # loop over catalog items
 
@@ -518,6 +518,12 @@ echo ""
 echo "Preparing a stage if not available"
 create_stage_if_not_exist
 echo "Done."
+
+echo ""
+echo "Preparing product plan unit if not available"
+create_productplanunit_if_not_exist
+echo "Done."
+
 
 echo ""
 if [[ $# == 0 ]]

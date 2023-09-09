@@ -10,7 +10,7 @@
     }
   },
   spec: {
-    unit: "transactions",
+    unit: $unit,
     pricing: {
       type: "fixed",
       "limit": {

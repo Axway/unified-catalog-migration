@@ -1,0 +1,106 @@
+[ {
+  "id" : "8a2d8c568802690e01882f01c33410f7",
+  "owningTeamId" : "a2fd98f7-db85-4885-87dc-72177a80ebf4",
+  "definitionType" : "API",
+  "definitionSubType" : "swaggerv2",
+  "definitionRevision" : 1,
+  "name" : "financial-company",
+  "description" : "API From Edge API Manager",
+  "tags" : [ "DOMAIN_financial-accounting", "OWNER_USER_ngonzbed" ],
+  "metadata" : {
+    "createTimestamp" : "2023-05-18T13:17:04.695+0000",
+    "createUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777",
+    "modifyTimestamp" : "2023-05-18T13:17:04.695+0000",
+    "modifyUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777"
+  },
+  "visibility" : "RESTRICTED",
+  "state" : "PUBLISHED",
+  "access" : "admin",
+  "availableRevisions" : [ 1 ],
+  "latestVersion" : "1.0.0",
+  "totalSubscriptions" : 0
+}, {
+  "id" : "8a2d8c568802690e01884310746f4ca2",
+  "owningTeamId" : "a2fd98f7-db85-4885-87dc-72177a80ebf4",
+  "definitionType" : "API",
+  "definitionSubType" : "swaggerv2",
+  "definitionRevision" : 1,
+  "name" : "financial-company",
+  "description" : "API From Edge API Manager",
+  "tags" : [ "OWNER_USER_ngonzbed", "DOMAIN_finance" ],
+  "metadata" : {
+    "createTimestamp" : "2023-05-22T10:45:31.890+0000",
+    "createUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777",
+    "modifyTimestamp" : "2023-05-22T10:45:31.890+0000",
+    "modifyUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777"
+  },
+  "visibility" : "RESTRICTED",
+  "state" : "PUBLISHED",
+  "access" : "admin",
+  "availableRevisions" : [ 1 ],
+  "latestVersion" : "1.0.0",
+  "totalSubscriptions" : 0
+}, {
+  "id" : "8a2d8d8089644337018a696dab1c1ffd",
+  "owningTeamId" : "a2fd98f7-db85-4885-87dc-72177a80ebf4",
+  "definitionType" : "API",
+  "definitionSubType" : "swaggerv2",
+  "definitionRevision" : 1,
+  "name" : "financial-company",
+  "description" : "API From Edge API Manager",
+  "tags" : [ "OWNER_USER_ngonzbed", "DOMAIN_finance" ],
+  "metadata" : {
+    "createTimestamp" : "2023-09-06T07:38:29.536+0000",
+    "createUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777",
+    "modifyTimestamp" : "2023-09-06T07:38:29.536+0000",
+    "modifyUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777"
+  },
+  "visibility" : "RESTRICTED",
+  "state" : "PUBLISHED",
+  "access" : "admin",
+  "availableRevisions" : [ 1 ],
+  "latestVersion" : "1.0.1",
+  "totalSubscriptions" : 0
+}, {
+  "id" : "8a2d8d8089644337018a75507fdb30e6",
+  "owningTeamId" : "a2fd98f7-db85-4885-87dc-72177a80ebf4",
+  "definitionType" : "API",
+  "definitionSubType" : "swaggerv2",
+  "definitionRevision" : 1,
+  "name" : "financial-company",
+  "description" : "API From Edge API Manager",
+  "tags" : [ "OWNER_USER_ngonzbed", "DOMAIN_finance" ],
+  "metadata" : {
+    "createTimestamp" : "2023-09-08T15:02:04.510+0000",
+    "createUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777",
+    "modifyTimestamp" : "2023-09-08T15:02:04.510+0000",
+    "modifyUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777"
+  },
+  "visibility" : "RESTRICTED",
+  "state" : "PUBLISHED",
+  "access" : "admin",
+  "availableRevisions" : [ 1 ],
+  "latestVersion" : "1.0.1",
+  "totalSubscriptions" : 0
+}, {
+  "id" : "8a2d94fd87fe119201886ccae464059f",
+  "owningTeamId" : "a2fd98f7-db85-4885-87dc-72177a80ebf4",
+  "definitionType" : "API",
+  "definitionSubType" : "swaggerv2",
+  "definitionRevision" : 1,
+  "name" : "financial-company",
+  "description" : "API From Edge API Manager",
+  "tags" : [ "OWNER_USER_ngonzbed", "DOMAIN_finance" ],
+  "metadata" : {
+    "createTimestamp" : "2023-05-30T13:13:36.105+0000",
+    "createUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777",
+    "modifyTimestamp" : "2023-05-30T13:13:36.105+0000",
+    "modifyUserId" : "service-account-c3f98507-09c0-4e61-b2a9-34cee9399777"
+  },
+  "visibility" : "RESTRICTED",
+  "state" : "PUBLISHED",
+  "access" : "admin",
+  "availableRevisions" : [ 1 ],
+  "latestVersion" : "1.0.0",
+  "totalSubscriptions" : 1
+} ]

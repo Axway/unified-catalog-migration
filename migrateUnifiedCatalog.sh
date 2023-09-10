@@ -76,8 +76,8 @@ function migrate() {
 		then
 			CATALOG_ID=`jq -r ".[0].id" $TEMP_DIR/catalogItem.json`
 		else
-			#filter the one that match latestersion to the consumerInstance-references.apiServiceRevision
-			CATALOG_ID=`jq --arg FILTER_VALUE "$CATALOG_APISERVICE_REVISION" -r '.[] | select(.latestVersion==$FILTER_VALUE)' $TEMP_DIR/catalogItem.json | jq -r ". | .id"`
+			#filter the one that match the consumerInstance ID
+			CATALOG_ID=$(findCatalogItenAssociatedWithConsumerInstance $TEMP_DIR/catalogItem.json "$CONSUMER_INSTANCE_ID")
 		fi
 		echo "			CatalogID=$CATALOG_ID"
 
@@ -144,9 +144,16 @@ function migrate() {
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
 			# The file is empty.
-			echo "		Assets exists, nothing to do"
+			echo "		Assets exists, need to add new service..."
 			# keep information
 			export ASSET_NAME=$(jq -r .[0].name $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json)
+
+			echo "			Creating asset mapping for linking with API service..." 
+			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
+			echo "	Posting asset mapping to Central"
+			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
+			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
+			
 		else
 			# Process.
 			echo "		Asset does not exist, we can create it"
@@ -442,14 +449,16 @@ function migrate() {
 		echo "	cleaning temp files..."
 		if [[ $error == 0 ]] # does not work all the time as we set the error inside a loop /!\
 		then
+			#echo "clean 1"
 			rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
-					fi
+		fi
 
 	done # loop over catalog items
 
 	# clean up catalog item files
 	if [[ $error == 0 ]]
 	then
+		#echo "clean 2"
 		rm $TEMP_DIR/catalog*
 		rm $TEMP_DIR/*arketplace*
 		rm $TEMP_DIR/pdtCategories.json

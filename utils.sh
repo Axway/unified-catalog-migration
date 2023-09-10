@@ -158,6 +158,36 @@ function readCatalogDocumentationFromItsId() {
 }
 
 
+################################
+# $1: json of catalog items
+# $3: consumerInstanceID
+# Output: CatalogId
+################################
+function findCatalogItenAssociatedWithConsumerInstance {
+
+	CATALOG_LIST=$1
+	CONSUMER_INSTANCE_ID=$2
+
+	# loop over JSon
+	cat $CATALOG_LIST | jq -rc ".[] | {id: .id"} | while IFS= read -r line ; do
+
+		CATALOG_ID=$(echo $line | jq -r '.id')
+
+		# query the CatalogItem properties
+		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/properties/apiServerInfo'
+		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogProperties.json
+
+		CONSUMERI_ID_FOUND=`cat $TEMP_DIR/catalogProperties.json | jq -r ".consumerInstance.id"`
+
+		if [ $CONSUMERI_ID_FOUND == $CONSUMER_INSTANCE_ID ]
+		then
+			echo $CATALOG_ID
+			exit 0
+		fi
+
+	done
+}
+
 ###########################################################################
 # Read Marketplace Information (guid/url/subdomain)                       #
 #                                                                         #

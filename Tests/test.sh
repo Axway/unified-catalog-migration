@@ -426,6 +426,16 @@ function testDescriptionLength {
 
 }
 
+function testFindCatalogItenAssociatedWithConsumerInstance {
+
+	loginToPlatform
+
+	CENTRAL_URL=$(getCentralURL)
+	
+	CATALOG_ID=$(findCatalogItenAssociatedWithConsumerInstance ./catalogItem.json "8a2d823e8835f9070188431060d52334")
+	echo "We found the Catalog ID = $CATALOG_ID"
+
+}
 ##########################
 ####### START HERE #######
 ##########################
@@ -437,7 +447,8 @@ function testDescriptionLength {
 #	echo "Paramter; $1"
 #fi
 
-testDescriptionLength
+testFindCatalogItenAssociatedWithConsumerInstance
+#testDescriptionLength
 #testReadingCatalogDocumentation
 #testReadingCatalogSubscription
 #testCURL

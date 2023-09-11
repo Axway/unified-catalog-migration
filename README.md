@@ -4,11 +4,11 @@ Tool for migrating Unified Catalog service into Marketplace product
 
 The script will:
 
-1. log into the plaftorm using the `axway auth login` either using the browser or using a service account (if set in the configuration file)
+1. log into the platform using the `axway auth login` either using the browser or using a service account (if set in the configuration file)
 2. read all existing catalog items from a specific environment
 3. For each catalog item
     * find the linked API Service
-    * create an asset and linked it to the API Service
+    * create an asset (or use an existing one) and linked it to the API Service
     * create a product and linked it to the asset created
     * (optional) publish the product to the desire Marketplace
     * (optional if product is published) read existing Active subscription and create the corresponding Marketplace subscription / Application if exist
@@ -85,3 +85,4 @@ Migrating a single catalog item link to an environment:
 * Tags from the Unified Catalog are not added to the product
 * No product visibility set based on the catalog item sharing
 * Product can be publish in only one Marketplace
+* No plan created when resource added to an existing Asset

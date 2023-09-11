@@ -9,7 +9,7 @@ The script will:
 3. For each catalog item
     * find the linked API Service
     * create an asset (or use an existing one) and linked it to the API Service
-    * create a product and linked it to the asset created
+    * create a product (if not existing yet) and linked it to the asset created
     * (optional) publish the product to the desire Marketplace
     * (optional if product is published) read existing Active subscription and create the corresponding Marketplace subscription / Application if exist
 

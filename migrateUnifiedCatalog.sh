@@ -133,14 +133,19 @@ function migrate() {
 					CATALOG_CATEGORIES=$TMP
 				fi
 
+# TODO - Fix for MacOS <<< -> <
 			done <<< `cat $TEMP_DIR/catalogItemCategoryId.txt`
 			echo "			categories found = $CATALOG_CATEGORIES"
 		else
 			echo "			no categories found!"
 		fi
 
-		echo "	Checking if asset $CONSUMER_INSTANCE_TITLE already created..."
-		axway central get assets -q "title=='$CONSUMER_INSTANCE_TITLE';metadata.references.name=="$CATALOG_APISERVICEENV";metadata.references.kind==environment" -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json
+		# Compute the Asset name based on the APIService version: APISErvice version == X.Y.Z => Asset name == APIService name VX
+		CATALOG_ITEM_VERION=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".latestVersion" `
+		ASSET_TITLE=$(computeAssetNameFromAPIservice $CONSUMER_INSTANCE_TITLE $CATALOG_ITEM_VERION)
+
+		echo "	Checking if asset $ASSET_TITLE already created..."
+		axway central get assets -q "title=='$ASSET_TITLE'" -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
 			# The file is empty.
@@ -153,6 +158,8 @@ function migrate() {
 			echo "	Posting asset mapping to Central"
 			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
 			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
+
+			# /!\ this trigger a new release of the product
 			
 		else
 			# Process.
@@ -163,11 +170,11 @@ function migrate() {
 			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 			then
 				echo "		without owner"
-				jq -n -f ./jq/asset-create.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				jq -n -f ./jq/asset-create.jq --arg title "$ASSET_TITLE" --arg description "$CATALOG_DESCRIPTION" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
 				error_exit "Error while creating asset file $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
 			else
 				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/asset-create-owner.jq --arg title "$CONSUMER_INSTANCE_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
+				jq -n -f ./jq/asset-create-owner.jq --arg title "$ASSET_TITLE" --arg description "$CATALOG_DESCRIPTION" --arg teamId "$CONSUMER_INSTANCE_OWNER_ID"> $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json
 				error_exit "Error while creating asset file $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME.json"
 			fi
 
@@ -198,23 +205,56 @@ function migrate() {
 			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
 		fi # asset exist?
 
+		# reading asset resource name (used for quota creation)
+		echo "	Reading the created asset resource name..."
+		export RESOURCE_NAME=`axway central get assetresource -s $ASSET_NAME -o json | jq -r .[].name`
+
+
 		# Do the same for product but not for subscription... It could help to solve Mercadona duplicate issues: https://jira.axway.com/browse/APIGOV-25743
 		echo "	Checking if product $CONSUMER_INSTANCE_TITLE already created..."
-		axway central get products -q "title=='$CONSUMER_INSTANCE_TITLE';metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json
+		axway central get products -q "title=='$CONSUMER_INSTANCE_TITLE'" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]
 		then
-			# The file is empty.
-			echo "		Product exists, nothing to do"
+			# The file is not empty.
+			echo "		Product exists, check Asset already linked?"
+
+			axway central get products -q "title=='$CONSUMER_INSTANCE_TITLE';metadata.references.name=="$ASSET_NAME";metadata.references.kind==Asset" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist-with-asset.json
+			if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist-with-asset.json` == 0 ] 
+			then
+				echo "		Asset not linked ==> linking Asset to product"
+				jq -n -f ./jq/product-asset.jq --arg asset_name "$ASSET_NAME" > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-add.json
+				# merge the files
+				jq '.[].spec.assets += [input]' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-add.json > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-tmp.json
+
+				# remove waht needs to be removed....
+				echo $(cat $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-tmp.json | jq 'del(. | .[].state?, .[].metadata.references?, .[].references, .[].latestrelease?)') > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-updated.json
+
+				# post to central
+				axway central apply -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-updated.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+				error_exit "Problem posting product asset list update" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json"
+
+				# activate the product
+				jq -n -f ./jq/product-activation.jq --arg productName $CONSUMER_INSTANCE_TITLE > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json
+				axway central apply -f $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json -y -o json > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json
+				error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
+
+				# add specific plan for the current resource.
+				createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME
+
+			else
+				echo "		Asset already linked to product => nothing to do"
+			fi
+
 			# keep information
 			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json`
+
+			# TODO Add a new plan with the new resources?
+			# TODO Trigger a new release?
+
 		else
 			# Process.
 			echo "		Product does not exist, we can create it"
-
-			# reading asset resource name (used for quota creation)
-			echo "	Reading the created asset resource name..."
-			export RESOURCE_NAME=`axway central get assetresource -s $ASSET_NAME -o json | jq -r .[].name`
 
 			# create the corresponding product
 			echo "	creating product file..." 
@@ -284,37 +324,7 @@ function migrate() {
 
 			#  Create a Product Plan (Free)
 			echo "	Adding Free plan..." 
-			if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
-			then
-				echo "		without owner"
-				jq -n -f ./jq/product-plan-create.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
-			else
-				echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
-				jq -n -f ./jq/product-plan-create-owner.jq --arg plan_name free-$PRODUCT_NAME --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
-			fi
-			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json
-			error_exit "Problem when creating a Product plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json"
-
-			# retrieve product plan since there could be naming conflict
-			export PRODUCT_PLAN_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
-			export PRODUCT_PLAN_ID=`jq -r .[0].metadata.id $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
-
-			# Adding plan quota
-			echo "		Adding plan quota..."
-			jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg unit $PLAN_UNIT_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
-			# update the quota limit - need to put it in the environment list so that jq can access the value.
-			PLAN_QUOTA=`echo $PLAN_QUOTA`
-			export PLAN_QUOTA
-			jq '.spec.pricing.limit.value=($ENV.PLAN_QUOTA|tonumber)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
-			axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json
-			error_exit "Problem with creating Quota" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json"
-
-			# Activating the plan
-			echo "	Activating the plan..."
-			axway central get productplans $PRODUCT_PLAN_NAME -o json  | jq '.state = "active"' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
-			echo $(cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json | jq 'del(. | .status?, .references?)') > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
-			axway central apply -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json
-			error_exit "Problem activating the plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json"
+			createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME
 
 		fi # product exist?
 
@@ -349,7 +359,7 @@ function migrate() {
 			#TODO - ask whether or not to create subscription?
 
 			##########
-			# WARNING: Consumerinstance != Catalog item - only the name/title can link both
+			# WARNING: Consumerinstance != Catalog item - only the AcatlogItem/properties.apiServerInfor.consumerInstance link them
 			##########
 
 			# read catalog id from catalog name
@@ -381,7 +391,7 @@ function migrate() {
 				echo "			Found product asset resource id in marketplace:" $MP_ASSETRESOURCE_ID
 
 				echo "			Checking if subscription already exist"
-				# it is forbidden for the same team to have 2 subsctiptions on the same plam
+				# it is forbidden for the same team to have 2 subsctiptions on the same plan
 				CONTENT=$(getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
 				NB_SUBSCRIPTION=`echo $CONTENT | jq '.items|length'`
 
@@ -403,6 +413,7 @@ function migrate() {
 					else
 
 						# check if managedapp not already exists to avoid duplicating it
+						# TODO - appName (team)
 						MP_MANAGED_APP_ID=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=$SUBSCRIPTION_APP_NAME&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
 
 						if [[ MP_MANAGED_APP_ID == null ]]

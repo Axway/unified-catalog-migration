@@ -33,6 +33,26 @@ An environment file is available in config directory to setup some properties:
 * PLAN_APPROVAL_MODE - automatic (default) or manual
 * PUBLISH_TO_MARKETPLACES to know if products need to be publish to Marketplace
 * MARKETPLACE_TITLE to give the Marketplace title where the product needs to be published.
+* ASSET_NAME_FOLLOW_SERVICE_VERSION to help naming the Asset based on the APIService name (see Note below)
+
+Note regarding ASSET_NAME_FOLLOW_SERVICE_VERSION:
+ When same service (same name) exists in multiple environments, we will create 1 Asset per major service release and only one Product
+ For that you need to set ASSET_NAME_FOLLOW_SERVICE_VERSION=Y
+
+Sample:
+
+Env1: APIService1 - v1.0.0
+Env2: APIService1 - v1.0.1
+Env3: APIService1 - v2.0.0
+
+After Migration: using ASSET_NAME_FOLLOW_SERVICE_VERSION=Y
+ Asset APIService1 V1 linked to APIService1 - v1.0.0 and APIService1 - v1.0.1
+ Asset APIService1 V2 linked to APIService1 - v2.0.0
+ Product APIService1 linked to Asset APIService1 V1 and Asset APIService1 V1
+
+After Migration: using ASSET_NAME_FOLLOW_SERVICE_VERSION=N
+ Asset APIService1 linked to APIService1 - v1.0.0 and APIService1 - v1.0.1 and APIService1 - v2.0.0
+ Product APIService1 linked to Asset APIService1
 
 ## Mapping Unified Catalog => Marketplace
 

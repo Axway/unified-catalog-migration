@@ -436,6 +436,19 @@ function testFindCatalogItenAssociatedWithConsumerInstance {
 	echo "We found the Catalog ID = $CATALOG_ID"
 
 }
+
+function testGetSubscriptionFromCatalogId {
+
+	loginToPlatform
+	CENTRAL_URL=$(getCentralURL)
+
+	# primavera-facturas (3 subscriptions - 2 actives)
+	CATALOG_ID="8a2d861387fe5e7d018833d92efa43c3"
+
+	curl -s --location --request GET $CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/subscriptions?query=%28state==ACTIVE%29' --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemSubscriptions.json
+
+}
+
 ##########################
 ####### START HERE #######
 ##########################
@@ -447,7 +460,10 @@ function testFindCatalogItenAssociatedWithConsumerInstance {
 #	echo "Paramter; $1"
 #fi
 
-testFindCatalogItenAssociatedWithConsumerInstance
+
+computeAssetNameFromAPIservice "MyService" "3.4.5"
+#testGetSubscriptionFromCatalogId 
+#testFindCatalogItenAssociatedWithConsumerInstance
 #testDescriptionLength
 #testReadingCatalogDocumentation
 #testReadingCatalogSubscription

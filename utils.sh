@@ -316,3 +316,79 @@ function checkEnvironmentVariables {
 		exit 1
 	fi
 }
+
+
+###########################################
+#
+# Create a plan + quota and activate it
+#
+# $1 : owner
+# $2 : productName
+# $3 : consumerInstanceName
+# $4 : assetName
+# $5 : resourceName
+###########################################
+function createActiveProductPlan {
+
+	# param mapping
+	CONSUMER_INSTANCE_OWNER_ID=$1
+	PRODUCT_NAME=$2
+	CONSUMER_INSTANCE_NAME=$3
+	ASSET_NAME=$4
+	RESOURCE_NAME=$5
+
+	# Compute PlanTitle
+	PLAN_TITLE="Plan for $ASSET_NAME - $CONSUMER_INSTANCE_NAME"
+
+	if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
+	then
+		echo "		without owner"
+		jq -n -f ./jq/product-plan-create.jq --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
+	else
+		echo "		with owningTeam : $CONSUMER_INSTANCE_OWNER_ID"
+		jq -n -f ./jq/product-plan-create-owner.jq --arg plan_title "$PLAN_TITLE" --arg product $PRODUCT_NAME --arg approvalMode $PLAN_APPROVAL_MODE  --arg teamId "$CONSUMER_INSTANCE_OWNER_ID" > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json
+	fi
+	axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan.json -o json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json
+	error_exit "Problem when creating a Product plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json"
+
+	# retrieve product plan since there could be naming conflict
+	export PRODUCT_PLAN_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
+	export PRODUCT_PLAN_ID=`jq -r .[0].metadata.id $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
+
+	# Adding plan quota
+	echo "		Adding plan quota..."
+	jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg unit $PLAN_UNIT_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
+	# update the quota limit - need to put it in the environment list so that jq can access the value.
+	PLAN_QUOTA=`echo $PLAN_QUOTA`
+	export PLAN_QUOTA
+	jq '.spec.pricing.limit.value=($ENV.PLAN_QUOTA|tonumber)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
+	axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json
+	error_exit "Problem with creating Quota" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json"
+
+	# Activating the plan
+	echo "	Activating the plan..."
+	axway central get productplans $PRODUCT_PLAN_NAME -o json  | jq '.state = "active"' > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
+	echo $(cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json | jq 'del(. | .status?, .references?)') > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json
+	axway central apply -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-updated.json -y > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json
+	error_exit "Problem activating the plan" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-activation.json"
+}
+
+
+###############################################################
+# Compute the Asset name base on Catalog item name and version
+# CatalogName / X.Y.Z => CatalogName VX
+#
+# $1: catalog name
+# $2: catalog version (X.Y.Z)
+###############################################################
+function computeAssetNameFromAPIservice {
+	CONSUMER_INSTANCE_TITLE=$1
+	CATALOG_ITEM_VERION=$2
+
+	if [[ $ASSET_NAME_FOLLOW_SERVICE_VERSION == 'Y' ]] ;
+	then
+		echo "$1 V"$(printf %.1s "$2")
+	else
+		echo "$1"
+	fi
+}

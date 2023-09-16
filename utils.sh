@@ -87,15 +87,21 @@ function create_productplanunit_if_not_exist() {
 ##########################################################
 function getFromMarketplace() {
 
-	#echo "url for MP = "$1
+	if [[ $3 == "" ]]
+	then 
+		outputFile=getFromMarketplaceResult.json
+	else
+		outputFile=$3
+	fi
 
-	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/getFromMarketplaceResult.json
+
+	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > $outputFile
 
 	if [[ $2 == "" ]]
 	then
-		echo `cat $TEMP_DIR/getFromMarketplaceResult.json`
+		echo `cat $outputFile`
 	else
-		echo `cat $TEMP_DIR/getFromMarketplaceResult.json | jq -r "$2"`
+		echo `cat $outputFile | jq -r "$2"`
 	fi
 }
 
@@ -336,9 +342,10 @@ function createActiveProductPlan {
 	CONSUMER_INSTANCE_NAME=$3
 	ASSET_NAME=$4
 	RESOURCE_NAME=$5
+	ENVIRONMENT_NAME=$6
 
 	# Compute PlanTitle
-	PLAN_TITLE="Plan for $ASSET_NAME - $CONSUMER_INSTANCE_NAME"
+	PLAN_TITLE="Plan for $ASSET_NAME - $CONSUMER_INSTANCE_NAME - $ENVIRONMENT_NAME"
 
 	if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 	then
@@ -391,4 +398,18 @@ function computeAssetNameFromAPIservice {
 	else
 		echo "$1"
 	fi
+}
+
+######################################################
+# Remove the team name from Application Name
+# to have cleaner application in Marketplace
+#
+# $1 : Unified Catalog subscription application name
+# Output: APP_NAME
+#
+# Sample:  APP_NAME (TeamName) => APP_NAME
+######################################################
+function removeTeamNameFromApplciationName {
+	# remove everything after ( and any ending spaces
+	echo $1 | cut -f1 -d"(" | sed -e 's/[[:space:]]*$//'
 }

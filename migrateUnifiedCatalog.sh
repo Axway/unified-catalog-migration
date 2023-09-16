@@ -240,7 +240,7 @@ function migrate() {
 				error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
 
 				# add specific plan for the current resource.
-				createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME
+				createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME $CATALOG_APISERVICEENV
 
 			else
 				echo "		Asset already linked to product => nothing to do"
@@ -324,7 +324,7 @@ function migrate() {
 
 			#  Create a Product Plan (Free)
 			echo "	Adding Free plan..." 
-			createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME
+			createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME $CATALOG_APISERVICEENV
 
 		fi # product exist?
 
@@ -356,7 +356,6 @@ function migrate() {
 				error_exit "Problem with pubishing a Product on Marketplace" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-publish-created.json"
 				echo "		$PRODUCT_NAME published to Marketplace $MARKETPLACE_TITLE"
 			fi
-			#TODO - ask whether or not to create subscription?
 
 			##########
 			# WARNING: Consumerinstance != Catalog item - only the AcatlogItem/properties.apiServerInfor.consumerInstance link them
@@ -385,11 +384,11 @@ function migrate() {
 				echo "			Found product id in marketplace:" $MP_PRODUCT_ID
 				echo "			Found product latest version id in marketplace:" $MP_PRODUCT_VERSION_ID
 				echo "			Searching product plan id in marketplace..."
-				MP_PRODUCT_PLAN_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/plans" ".items[0].id")
+				MP_PRODUCT_PLAN_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/plans" ".items[0].id" $TEMP_DIR/getFromMarketplaceProductPlan.json)
 				echo "			Found product plan id in marketplace:" $MP_PRODUCT_PLAN_ID
-				MP_ASSETRESOURCE_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" ".items[0].id")
+				# TODO - what happen when several resource???
+				MP_ASSETRESOURCE_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" ".items[0].id" $TEMP_DIR/getFromMarketplaceProductAssetResource.json)
 				echo "			Found product asset resource id in marketplace:" $MP_ASSETRESOURCE_ID
-
 				echo "			Checking if subscription already exist"
 				# it is forbidden for the same team to have 2 subsctiptions on the same plan
 				CONTENT=$(getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
@@ -398,6 +397,7 @@ function migrate() {
 				if [[ $NB_SUBSCRIPTION != 0 ]]
 				then
 					echo "				A subscription already exist for team $SUBSCRIPTION_OWNING_TEAM... No need to create."
+					MP_SUBSCRIPTION_ID=`echo $CONTENT | jq -r ".items[0].id"`
 				else
 					echo "			Create subscription $SUBSCRIPTION_NAME...."
 					#SUBNAME=$PRODUCT_NAME-$SUBSCRIPTION_OWNING_TEAM
@@ -406,50 +406,53 @@ function migrate() {
 					error_post "Problem creating subscription on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
 					# read the subscriptionId from the created susbcription
 					MP_SUBSCRIPTION_ID=`echo $CONTENT | jq -r ".id"`
+				fi
 
-					if [[ $SUBSCRIPTION_APP_NAME == null ]]
+				# Now time to create application and access request
+				if [[ $SUBSCRIPTION_APP_NAME == null ]]
+				then
+					echo "			/!\ no application found, cannot create ManagedApplication / AccessRequest"
+				else
+
+					echo "			Need to create app - remove the team name in application name"
+					# appName (team) -> appName
+					SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME=$(removeTeamNameFromApplciationName "$SUBSCRIPTION_APP_NAME")
+					#SUBCRIPTION_APP_NAME_FOR_QUERY=${SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME// /%20}
+					# check if managedapp not already exists to avoid duplicating it
+					MP_MANAGED_APP_ID=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=${SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME// /%20}&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
+
+					if [[ $MP_MANAGED_APP_ID == "null" ]]
 					then
-						echo "			/!\ no application found, cannot create ManagedApplication / AccessRequest"
+						# application does not exist yet... so we can create it
+						echo "			Create managed application $SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME...."
+						jq -n -f ./jq/product-mp-application.jq --arg applicationTitle "$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME" --arg teamId $SUBSCRIPTION_OWNING_TEAM > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json
+						CONTENT=$(postToMarketplace "$MP_URL/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json)
+						error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
+						MP_MANAGED_APP_ID=`echo $CONTENT | jq -r ".id"`
 					else
-
-						# check if managedapp not already exists to avoid duplicating it
-						# TODO - appName (team)
-						MP_MANAGED_APP_ID=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=$SUBSCRIPTION_APP_NAME&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
-
-						if [[ MP_MANAGED_APP_ID == null ]]
-						then
-							# application does not exist yet... so we can create it
-							echo "			Create managed application $SUBSCRIPTION_APP_NAME...."
-							jq -n -f ./jq/product-mp-application.jq --arg applicationTitle $SUBSCRIPTION_APP_NAME --arg teamId $SUBSCRIPTION_OWNING_TEAM > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json
-							CONTENT=$(postToMarketplace "/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json)
-							error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
-							MP_MANAGED_APP_ID=`echo $CONTENT | jq -r ".id"`
-						else
-							echo "			$SUBSCRIPTION_APP_NAME managedApp is already existing."
-						fi
-
-						# Now we need to check that we have all elements to create the access request ie CRD/ARD otherwise it will fails
-						# read apisr and check ARD/CRD presence
-						axway central get apisi -q "metadata.references.name==$CATALOG_APISERVICE&sort=metadata.audit.createTimestamp%2CDESC" -s $CATALOG_APISERVICEENV -o json > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json
-						# retrieve ARD / CRD....
-						cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json | jq -rc ".[0] | {ard: .spec.accessRequestDefinition, crd: .spec.credentialRequestDefinitions}" > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json
-						ARD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".ard"`
-						CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
-			
-						if [[ $ARD != null && $CRD != null ]]
-						then
-							echo "			Create request access...."
-							ACCESS_REQUEST_NAME="Something temporary"
-
-							jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json
-							CONTENT=$(postToMarketplace "/api/v1/applications/$MP_MANAGED_APP_ID/accessrequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json)
-							error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
-						else
-							echo "			/!\ Cannot proceed with AccessRequest as the service does not have the CredentialRequestDefinition nor the AccessRequestDefinition"
-						fi
-			
+						echo "			$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME managedApp is already existing."
 					fi
 
+					# Now we need to check that we have all elements to create the access request ie CRD/ARD otherwise it will fails
+					# read apisr and check ARD/CRD presence
+					axway central get apisi -q "metadata.references.name==$CATALOG_APISERVICE&sort=metadata.audit.createTimestamp%2CDESC" -s $CATALOG_APISERVICEENV -o json > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json
+					# retrieve ARD / CRD....
+					cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json | jq -rc ".[0] | {ard: .spec.accessRequestDefinition, crd: .spec.credentialRequestDefinitions}" > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json
+					ARD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".ard"`
+					CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
+		
+					if [[ $ARD != null && $CRD != null ]]
+					then
+						echo "			Create request access...."
+						ACCESS_REQUEST_NAME="$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME"
+						jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json
+						CONTENT=$(postToMarketplace "$MP_URL/api/v1/applications/$MP_MANAGED_APP_ID/accessRequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json)
+						error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
+
+						# TODO - Activate the AccessRequest / ManagedApp?
+					else
+						echo "			/!\ Cannot proceed with AccessRequest as the service does not have the CredentialRequestDefinition nor the AccessRequestDefinition"
+					fi
 				fi
 
 			done # loop over subscription

@@ -449,6 +449,52 @@ function testGetSubscriptionFromCatalogId {
 
 }
 
+function findAllSubscriptionFromEnvironment {
+
+	CENTRAL_ENVIRONMENT=$1
+	APISERVICE=$2
+
+	loginToPlatform
+	CENTRAL_URL=$(getCentralURL)
+
+	axway central get consumeri -s $CENTRAL_ENVIRONMENT -q "title=='$APISERVICE'" -o json > $TEMP_DIR/consumers.json
+	cat $TEMP_DIR/consumers.json | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, apiserviceName: .references.apiService, apiserviceRevision: .references.apiServiceRevision, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
+
+		CONSUMER_INSTANCE_ID=$(echo $line | jq -r '.id')
+		CONSUMER_INSTANCE_NAME=$(echo $line | jq -r '.name')
+		CONSUMER_INSTANCE_TITLE=$(echo $line | jq -r '.title')
+		CONSUMER_INSTANCE_OWNER_ID=$(echo $line | jq -r '.ownerId')
+
+		
+		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE'%27%29' 
+		# replace spaces with %20 in case the Catalog name has some
+		URL=${URL// /%20}
+		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
+
+		# Are there multiple version?
+		if [[ `jq length $TEMP_DIR/catalogItem.json` == 1 ]]
+		then
+			CATALOG_ID=`jq -r ".[0].id" $TEMP_DIR/catalogItem.json`
+		else
+			#filter the one that match the consumerInstance ID
+			CATALOG_ID=$(findCatalogItenAssociatedWithConsumerInstance $TEMP_DIR/catalogItem.json "$CONSUMER_INSTANCE_ID")
+		fi
+		echo "CatalogID=$CATALOG_ID"
+
+		# find subscription number
+		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'' 
+		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemDetails.json
+
+		SUBSCRIPTION_NUMBER=`jq -r ".totalSubscriptions" $TEMP_DIR/catalogItemDetails.json`
+		echo "$CONSUMER_INSTANCE_TITLE ($CATALOG_ID) has $SUBSCRIPTION_NUMBER subscription(s)"
+
+	done
+}
+
+function testRemovingTeamNameFromApplication {
+	removeTeamNameFromApplciationName "$1"
+}
+
 ##########################
 ####### START HERE #######
 ##########################
@@ -460,8 +506,14 @@ function testGetSubscriptionFromCatalogId {
 #	echo "Paramter; $1"
 #fi
 
+APPLICATION=$(testRemovingTeamNameFromApplication "APP NAME (TeanName)")
+echo "$APPLICATION-"
+APPLICATION=$(testRemovingTeamNameFromApplication "APP NAME")
+echo "$APPLICATION-"
 
-computeAssetNameFromAPIservice "MyService" "3.4.5"
+
+#findAllSubscriptionFromEnvironment $1 $2
+#computeAssetNameFromAPIservice "MyService" "3.4.5"
 #testGetSubscriptionFromCatalogId 
 #testFindCatalogItenAssociatedWithConsumerInstance
 #testDescriptionLength

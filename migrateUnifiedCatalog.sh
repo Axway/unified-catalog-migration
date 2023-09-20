@@ -264,10 +264,6 @@ function migrate() {
 
 			# keep information
 			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json`
-
-			# TODO Add a new plan with the new resources?
-			# TODO Trigger a new release?
-
 		else
 			# Process.
 			echo "		Product does not exist, we can create it"

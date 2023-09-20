@@ -4,7 +4,7 @@
 # - add the sharing of catalog?
 
 # Sourcing user-provided env properties
-source ./config/env.properties
+source ./config/envCB.properties
 
 # add all utility functions
 source ./utils.sh
@@ -160,6 +160,7 @@ function migrate() {
 			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
 
 			# /!\ this trigger a new release of the product
+			export EXISTING_ASSET_UPDATED=1
 			
 		else
 			# Process.
@@ -207,7 +208,7 @@ function migrate() {
 
 		# reading asset resource name (used for quota creation)
 		echo "	Reading the created asset resource name..."
-		export RESOURCE_NAME=`axway central get assetresource -s $ASSET_NAME -o json | jq -r .[].name`
+		export RESOURCE_NAME=`axway central get assetresource -s $ASSET_NAME -q metadata.references.name==$CATALOG_APISERVICE_REVISION -o json | jq -r '.[].name'`
 
 
 		# Do the same for product but not for subscription... It could help to solve Mercadona duplicate issues: https://jira.axway.com/browse/APIGOV-25743
@@ -244,6 +245,21 @@ function migrate() {
 
 			else
 				echo "		Asset already linked to product => nothing to do"
+				# check if Asset Release changed if yes add the plan with new resource.
+				if [[ $EXISTING_ASSET_UPDATED == 1 ]]
+				then
+					echo "			Create the new plan for the new resource"
+					createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME $CATALOG_APISERVICEENV
+
+					# activate the product
+					echo "			Activate product"
+					jq -n -f ./jq/product-activation.jq --arg productName $CONSUMER_INSTANCE_TITLE > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json
+					axway central apply -f $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json -y -o json > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json
+					error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
+
+					export EXISTING_ASSET_UPDATED=0
+				fi
+
 			fi
 
 			# keep information

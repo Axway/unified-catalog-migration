@@ -47,11 +47,12 @@ function migrate() {
 	echo "Found " `cat $TEMP_DIR/$TEMP_FILE | jq '.|length'` " catalog items to migrate."
 
 	# loop over the result and keep interesting data (name / description / API Service / Tags / Environment / Owner)
-	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, apiserviceName: .references.apiService, apiserviceRevision: .references.apiServiceRevision, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
+	cat $TEMP_DIR/$TEMP_FILE | jq -rc ".[] | {id: .metadata.id, name: .name, title: .title, version: .spec.version, apiserviceName: .references.apiService, apiserviceRevision: .references.apiServiceRevision, tags: .tags, environment: .metadata.scope.name, ownerId: .owner.id}" | while IFS= read -r line ; do
 
 		CONSUMER_INSTANCE_ID=$(echo $line | jq -r '.id')
 		CONSUMER_INSTANCE_NAME=$(echo $line | jq -r '.name')
 		CONSUMER_INSTANCE_TITLE=$(echo $line | jq -r '.title')
+		CONSUMER_INSTANCE_VERSION=$(echo $line | jq -r '.version')
 		CONSUMER_INSTANCE_OWNER_ID=$(echo $line | jq -r '.ownerId')
 		CATALOG_APISERVICE=$(echo $line | jq -r '.apiserviceName')
 		CATALOG_APISERVICE_REVISION=$(echo $line | jq -r '.apiserviceRevision')
@@ -144,24 +145,37 @@ function migrate() {
 		CATALOG_ITEM_VERION=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".latestVersion" `
 		ASSET_TITLE=$(computeAssetNameFromAPIservice $CONSUMER_INSTANCE_TITLE $CATALOG_ITEM_VERION)
 
+		# Name for the resource viaible in the Marketplace: ServiceName - EnvironmentName
+		# TODO could become a function to let the user decide what to do?
+		ASSET_RESOURCE_TITLE="$CATALOG_APISERVICE - $CATALOG_APISERVICEENV"
+
 		echo "	Checking if asset $ASSET_TITLE already created..."
 		axway central get assets -q "title=='$ASSET_TITLE'" -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]; then
 			# The file is empty.
-			echo "		Assets exists, need to add new service..."
+			echo "		Assets exists, need to add new service?"
 			# keep information
 			export ASSET_NAME=$(jq -r .[0].name $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-exist.json)
 
-			echo "			Creating asset mapping for linking with API service..." 
-			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
-			echo "	Posting asset mapping to Central"
-			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
-			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
+			# check if Asset contain already the service
+			axway central get assetresource -s $ASSET_NAME -q metadata.references.name==$CATALOG_APISERVICE_REVISION -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-resources-exist.json
+			if [ `jq length $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-resources-exist.json` == 0 ]
+			then
+				# add asset mapping
+				echo "			Creating asset mapping for linking with API service..." 
+				
+				jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" --arg assetResourceTitle "$ASSET_RESOURCE_TITLE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
+				echo "	Posting asset mapping to Central"
+				axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
+				error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
 
-			# /!\ this trigger a new release of the product
-			export EXISTING_ASSET_UPDATED=1
-			
+				# /!\ this trigger a new release of the product
+				export NEED_TO_ADD_PLAN=1
+			else
+				echo "			Asset already linked with API service - nothing to do"
+				export NEED_TO_ADD_PLAN=0	
+			fi
 		else
 			# Process.
 			echo "		Asset does not exist, we can create it"
@@ -200,7 +214,7 @@ function migrate() {
 
 			# adding the mapping to the service
 			echo "	Creating asset mapping for linking with API service..." 
-			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
+			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" --arg assetResourceTitle "$ASSET_RESOURCE_TITLE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
 			echo "	Posting asset mapping to Central"
 			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
 			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
@@ -214,9 +228,12 @@ function migrate() {
 		# Do the same for product but not for subscription... It could help to solve Mercadona duplicate issues: https://jira.axway.com/browse/APIGOV-25743
 		echo "	Checking if product $CONSUMER_INSTANCE_TITLE already created..."
 		axway central get products -q "title=='$CONSUMER_INSTANCE_TITLE'" -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json
+
 		# file will never be empty but only contain [] if nothing found.
 		if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json` != 0 ]
 		then
+			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json`
+
 			# The file is not empty.
 			echo "		Product exists, check Asset already linked?"
 
@@ -241,15 +258,15 @@ function migrate() {
 				error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
 
 				# add specific plan for the current resource.
-				createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME $CATALOG_APISERVICEENV
+				createActiveProductPlan "$CONSUMER_INSTANCE_OWNER_ID" "$PRODUCT_NAME" "$CONSUMER_INSTANCE_NAME" "$ASSET_NAME" "$RESOURCE_NAME" "$CATALOG_APISERVICEENV"
 
 			else
 				echo "		Asset already linked to product => nothing to do"
 				# check if Asset Release changed if yes add the plan with new resource.
-				if [[ $EXISTING_ASSET_UPDATED == 1 ]]
+				if [[ $NEED_TO_ADD_PLAN == 1 ]]
 				then
 					echo "			Create the new plan for the new resource"
-					createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME $CATALOG_APISERVICEENV
+					createActiveProductPlan "$CONSUMER_INSTANCE_OWNER_ID" "$PRODUCT_NAME" "$CONSUMER_INSTANCE_NAME" "$ASSET_NAME" "$RESOURCE_NAME" "$CATALOG_APISERVICEENV"
 
 					# activate the product
 					echo "			Activate product"
@@ -257,13 +274,10 @@ function migrate() {
 					axway central apply -f $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json -y -o json > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json
 					error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
 
-					export EXISTING_ASSET_UPDATED=0
+					export NEED_TO_ADD_PLAN=0
 				fi
 
 			fi
-
-			# keep information
-			export PRODUCT_NAME=`jq -r .[0].name $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-exist.json`
 		else
 			# Process.
 			echo "		Product does not exist, we can create it"
@@ -336,7 +350,7 @@ function migrate() {
 
 			#  Create a Product Plan (Free)
 			echo "	Adding Free plan..." 
-			createActiveProductPlan $CONSUMER_INSTANCE_OWNER_ID $PRODUCT_NAME $CONSUMER_INSTANCE_NAME $ASSET_NAME $RESOURCE_NAME $CATALOG_APISERVICEENV
+			createActiveProductPlan "$CONSUMER_INSTANCE_OWNER_ID" "$PRODUCT_NAME" "$CONSUMER_INSTANCE_NAME" "$ASSET_NAME" "$RESOURCE_NAME" "$CATALOG_APISERVICEENV"
 
 		fi # product exist?
 
@@ -389,35 +403,57 @@ function migrate() {
 				echo "		Need to migrate subscription ($SUBSCRIPTION_NAME) for team ($SUBSCRIPTION_OWNING_TEAM) using application ($SUBSCRIPTION_APP_NAME) to marketplace ($MARKETPLACE_TITLE)"
 
 				echo "			Searching product id in marketplace..."
+				# replace space with %20
 				SANITIZE_CATALOG_NAME=${CONSUMER_INSTANCE_TITLE// /%20}
-				CONTENT=$(getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$SANITIZE_CATALOG_NAME&sort=-lastVersion.metadata.createdAt%2C%2Bname")
-				MP_PRODUCT_ID=`echo $CONTENT | jq -r ".items[0].id"`
-				MP_PRODUCT_VERSION_ID=`echo $CONTENT | jq -r ".items[0].latestVersion.id"`
-				echo "			Found product id in marketplace:" $MP_PRODUCT_ID
-				echo "			Found product latest version id in marketplace:" $MP_PRODUCT_VERSION_ID
-				echo "			Searching product plan id in marketplace..."
-				MP_PRODUCT_PLAN_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/plans" ".items[0].id" $TEMP_DIR/getFromMarketplaceProductPlan.json)
-				echo "			Found product plan id in marketplace:" $MP_PRODUCT_PLAN_ID
-				# TODO - what happen when several resource???
-				MP_ASSETRESOURCE_ID=$(getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" ".items[0].id" $TEMP_DIR/getFromMarketplaceProductAssetResource.json)
-				echo "			Found product asset resource id in marketplace:" $MP_ASSETRESOURCE_ID
-				echo "			Checking if subscription already exist"
+
+				getMarketplaceProductFromCatalogItem $SANITIZE_CATALOG_NAME "$TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME.json"
+
+				MP_PRODUCT_ID=`cat  $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME.json | jq -r ' .[0].id'`
+				MP_PRODUCT_VERSION_ID=`cat  $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME.json | jq -r ' .[0].latestVersion.id'`
+				echo "			Found product id in marketplace: $MP_PRODUCT_ID"
+				echo "			Found product latest version id in marketplace: $MP_PRODUCT_VERSION_ID"
+				
 				# it is forbidden for the same team to have 2 subsctiptions on the same plan
-				CONTENT=$(getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM")
-				NB_SUBSCRIPTION=`echo $CONTENT | jq '.items|length'`
+				getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM" "" "$TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json"
+
+				echo "			Search the PlanId that manage the current service..."
+				MP_PRODUCT_PLAN_ID=$(getMarketplaceProductPlanIdFromCatalogItem "$ASSET_RESOURCE_TITLE" $CONSUMER_INSTANCE_VERSION $MP_PRODUCT_ID $MP_PRODUCT_VERSION_ID "$ASSET_TITLE")
+				echo "			Found PlanId: $MP_PRODUCT_PLAN_ID"	
+
+				echo "			Search if a susbcription exits for that plan..."
+				# 1st check that we have subscriptions
+				NB_SUBSCRIPTION=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq -r '.totalCount'`
 
 				if [[ $NB_SUBSCRIPTION != 0 ]]
 				then
-					echo "				A subscription already exist for team $SUBSCRIPTION_OWNING_TEAM... No need to create."
-					MP_SUBSCRIPTION_ID=`echo $CONTENT | jq -r ".items[0].id"`
+					# on peut chercher dans la liste...
+					SUBSCPRIPTION_ID=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq '[ .items[] | select( .plan.id=="'$MP_PRODUCT_PLAN_ID'" ) ]' | jq -r '.[0].id'`
+
+					# hack for the next if to work
+					if [[ $SUBSCPRIPTION_ID == null ]]
+					then
+						# the susbcription does not exist and we need to create a new one.
+						SUBSCPRIPTION_ID=''
+					fi
+
+					echo "			Found subscription=$SUBSCPRIPTION_ID"
+				fi
+
+				if [[ $SUBSCPRIPTION_ID != '' ]]
+				then
+					echo "				A subscription already exist for team $SUBSCRIPTION_OWNING_TEAM and planId... No need to create."
+					export MP_SUBSCRIPTION_ID=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq -r ".items[0].id"`
 				else
-					echo "			Create subscription $SUBSCRIPTION_NAME...."
-					#SUBNAME=$PRODUCT_NAME-$SUBSCRIPTION_OWNING_TEAM
+					echo "			Creating subscription..."
+					SUBSCRIPTION_NAME="UC - Subscription for $CATALOG_APISERVICE - $CATALOG_APISERVICEENV"
+					echo "			New Subscription name: $SUBSCRIPTION_NAME"
+
+					echo "			Posting susbcription creation..."
 					jq -n -f ./jq/product-mp-subscription.jq --arg subscriptionTitle "$SUBSCRIPTION_NAME" --arg teamId $SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
-					CONTENT=$(postToMarketplace "$MP_URL/api/v1/subscriptions" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json)
+					postToMarketplace "$MP_URL/api/v1/subscriptions" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
 					error_post "Problem creating subscription on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
 					# read the subscriptionId from the created susbcription
-					MP_SUBSCRIPTION_ID=`echo $CONTENT | jq -r ".id"`
+					export MP_SUBSCRIPTION_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json | jq -r ".id"`
 				fi
 
 				# Now time to create application and access request
@@ -428,7 +464,7 @@ function migrate() {
 
 					echo "			Need to create app - remove the team name in application name"
 					# appName (team) -> appName
-					SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME=$(removeTeamNameFromApplciationName "$SUBSCRIPTION_APP_NAME")
+					SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME=$(removeTeamNameFromApplicationName "$SUBSCRIPTION_APP_NAME")
 					#SUBCRIPTION_APP_NAME_FOR_QUERY=${SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME// /%20}
 					# check if managedapp not already exists to avoid duplicating it
 					MP_MANAGED_APP_ID=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=${SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME// /%20}&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
@@ -438,9 +474,9 @@ function migrate() {
 						# application does not exist yet... so we can create it
 						echo "			Create managed application $SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME...."
 						jq -n -f ./jq/product-mp-application.jq --arg applicationTitle "$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME" --arg teamId $SUBSCRIPTION_OWNING_TEAM > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json
-						CONTENT=$(postToMarketplace "$MP_URL/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json)
+						postToMarketplace "$MP_URL/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
 						error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
-						MP_MANAGED_APP_ID=`echo $CONTENT | jq -r ".id"`
+						MP_MANAGED_APP_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json | jq -r ".id"`
 					else
 						echo "			$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME managedApp is already existing."
 					fi
@@ -451,17 +487,23 @@ function migrate() {
 					# retrieve ARD / CRD....
 					cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance.json | jq -rc ".[0] | {ard: .spec.accessRequestDefinition, crd: .spec.credentialRequestDefinitions}" > $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json
 					ARD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".ard"`
-					CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
 		
-					if [[ $ARD != null && $CRD != null ]]
+					if [[ $ARD != null ]]
 					then
 						echo "			Create request access...."
+
+						# TODO check that access request is not existing
 						ACCESS_REQUEST_NAME="$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME"
+
+						MP_ASSETRESOURCE_ID=$(getMarketplaceProductAssetResourceIdFromCatalogItem "$ASSET_RESOURCE_TITLE" "$CONSUMER_INSTANCE_VERSION" "$MP_PRODUCT_ID" "$MP_PRODUCT_VERSION_ID" "$ASSET_TITLE")
 						jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json
-						CONTENT=$(postToMarketplace "$MP_URL/api/v1/applications/$MP_MANAGED_APP_ID/accessRequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json)
+						postToMarketplace "$MP_URL/api/v1/applications/$MP_MANAGED_APP_ID/accessRequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
 						error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
 
 						# TODO - Activate the AccessRequest / ManagedApp?
+
+						# TODO - Manage Credentials?
+						#CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
 					else
 						echo "			/!\ Cannot proceed with AccessRequest as the service does not have the CredentialRequestDefinition nor the AccessRequestDefinition"
 					fi
@@ -475,7 +517,7 @@ function migrate() {
 		echo "	cleaning temp files..."
 		if [[ $error == 0 ]] # does not work all the time as we set the error inside a loop /!\
 		then
-			#echo "clean 1"
+			echo "clean 1"
 			rm $TEMP_DIR/*$CONSUMER_INSTANCE_NAME*
 		fi
 
@@ -484,7 +526,7 @@ function migrate() {
 	# clean up catalog item files
 	if [[ $error == 0 ]]
 	then
-		#echo "clean 2"
+		echo "clean 2"
 		rm $TEMP_DIR/catalog*
 		rm $TEMP_DIR/*arketplace*
 		rm $TEMP_DIR/pdtCategories.json

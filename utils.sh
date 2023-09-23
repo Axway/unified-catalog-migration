@@ -89,18 +89,15 @@ function getFromMarketplace() {
 
 	if [[ $3 == "" ]]
 	then 
-		outputFile=getFromMarketplaceResult.json
+		outputFile=$TEMP_DIR/getFromMarketplaceResult.json
 	else
-		outputFile=$3
+		outputFile="$3"
 	fi
 
+	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > "$outputFile"
 
-	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > $outputFile
-
-	if [[ $2 == "" ]]
+	if [[ $2 != "" ]]
 	then
-		echo `cat $outputFile`
-	else
 		echo `cat $outputFile | jq -r "$2"`
 	fi
 }
@@ -117,6 +114,7 @@ function postToMarketplace() {
 
 	if [[ $3 == "" ]]
 	then 
+		# just in case...
 		outputFile=postToMarketplaceResult.json
 	else
 		outputFile=$3
@@ -124,8 +122,6 @@ function postToMarketplace() {
 
 	#echo "url for MP = "$1
 	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN -d "`cat $2`" > $outputFile
-
-	cat $outputFile
 }
 
 ############################################
@@ -323,6 +319,134 @@ function checkEnvironmentVariables {
 	fi
 }
 
+#########################################################################
+# Find the Marketpalce catalog corresponding to the Unified Catalog item
+# 
+# $1: CATALOG_ITEM_TITLE
+# $2: result file
+#########################################################################
+
+function getMarketplaceProductFromCatalogItem {
+
+	CATALOG_ITEM_TITLE=$1
+
+	NAME_WITHOUTSPACE=${CATALOG_ITEM_TITLE// /-}
+	TEMP_FILE_NAME="$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-tmp.json"
+
+	# call MP API
+	getFromMarketplace "$MP_URL/api/v1/products?limit=10&offset=0&search=$CATALOG_ITEM_TITLE&sort=-lastVersion.metadata.createdAt%2C%2Bname" "" $TEMP_FILE_NAME
+	# /!\ the above request can return multiple product as search use: *$NAME* => need to filter the content to get the real one
+
+	# select appropriate product based on the real title
+	cat $TEMP_DIR/product-mp-$CATALOG_ITEM_TITLE-tmp.json | jq -r '[ .items[] | select( .title=="'$CATALOG_ITEM_TITLE'" ) ]' > "$2"
+	
+	# remove intermediate files
+	rm -rf $TEMP_FILE_NAME
+
+}
+
+########################################################
+# Find product plan associated to the Catalog Item
+#
+# $1: CATALOG_TITLE
+# $2: CATALOG_ITEM_VERSION
+# $3: MP_PRODUCT_ID
+# $4: MP_PRODUCT_VERSION_ID
+# $5: ASSET_TITLE
+#
+# Return: "AssetResourceId"
+########################################################
+function getMarketplaceProductAssetResourceIdFromCatalogItem {
+
+	CATALOG_ITEM_TITLE=$1
+	CATALOG_ITEM_VERSION=$2
+	MP_PRODUCT_ID=$3
+	MP_PRODUCT_VERSION_ID=$4
+	ASSET_TITLE=$5
+
+	NAME_WITHOUTSPACE=${CATALOG_ITEM_TITLE// /-}
+	TEMP_FILE_NAME="$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-tmp.json"
+
+	# find resourceId from Product/assetResources
+	getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" "" "$TEMP_FILE_NAME"
+	# select the resouce
+	ASSET_RESOURCE_ID=`cat "$TEMP_FILE_NAME" | jq '[ .items[] | select( .title=="'"$CATALOG_ITEM_TITLE"'" and .version=="'$CATALOG_ITEM_VERSION'" and .assetTitle=="'"$ASSET_TITLE"'" ) ]' | jq -r ' .[0].id'`
+	echo $ASSET_RESOURCE_ID
+	rm -rf $TEMP_FILE_NAME
+}
+
+########################################################
+# Find product plan associated to the Catalog Item
+#
+# $1: CATALOG_TITLE
+# $2: CATALOG_ITEM_VERSION
+# $3: MP_PRODUCT_ID
+# $4: MP_PRODUCT_VERSION_ID
+# $5: ASSET_TITLE
+#
+# Return: "PlanId"
+########################################################
+function getMarketplaceProductPlanIdFromCatalogItem {
+
+	CATALOG_ITEM_TITLE="$1"
+	CATALOG_ITEM_VERSION=$2
+	MP_PRODUCT_ID=$3
+	MP_PRODUCT_VERSION_ID=$4
+	ASSET_TITLE=$5
+
+	NAME_WITHOUTSPACE=${CATALOG_ITEM_TITLE// /-}
+
+	# find resourceId from Product/assetResources
+	getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/versions/$MP_PRODUCT_VERSION_ID/assetresources" "" $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-tmp.json
+	# select the resouce
+	cat "$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-tmp.json" | jq '[ .items[] | select( .title=="'"$CATALOG_ITEM_TITLE"'" and .version=="'$CATALOG_ITEM_VERSION'" and .assetTitle=="'"$ASSET_TITLE"'" ) ]' > $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-selected-tmp.json
+	PRODUCT_RESOURCE_ID=`cat $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-selected-tmp.json | jq -r ' .[0].id'`
+	#echo "PdtResId:$PRODUCT_RESOURCE_ID"
+	rm -rf $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-selected-tmp.json
+
+	# find product plans
+	getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/plans" "" $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-tmp.json
+
+	# loop in the plans... to find the one having a quota matching the resourceID of the catalogitem
+	NB_PLANS=`cat "$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-tmp.json" | jq '.items|length'`
+	#echo "NB_PLANS=$NB_PLANS"
+
+	found=0
+	indexPlan=0
+	# for each plan
+	while [ $found != 1 ]
+	do
+		# extract first plan
+		PLAN_ID=`cat "$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-tmp.json" | jq -r '.items['$indexPlan'].id'`
+		#echo "PlanId=$PLAN_ID"
+
+		getFromMarketplace "$MP_URL/api/v1/products/$MP_PRODUCT_ID/plans/$PLAN_ID/quotas" "" $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-$PLAN_ID-quotas.json
+
+		# per migration there is always 1 single quota
+		QUOTA_RESOURCE_ID=`cat $TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-$PLAN_ID-quotas.json | jq -r ".items[0].assetResources[0].id"`
+		rm -rf "$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-$PLAN_ID-quotas.json"
+		#echo "quotaRes=$QUOTA_RESOURCE_ID"
+
+		if [[ $PRODUCT_RESOURCE_ID == $QUOTA_RESOURCE_ID ]]
+		then
+			# we found the good plan
+			found=1
+			echo "$PLAN_ID"
+		else
+			indexPlan=$((indexPlan+1))
+
+			if [[ $indexPlan == $NB_PLANS ]]
+			then
+				found=1
+			fi
+		fi
+
+	done
+	
+	# remove intermediate files
+	rm -rf "$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-resources-tmp.json"
+	rm -rf "$TEMP_DIR/product-mp-$NAME_WITHOUTSPACE-plans-tmp.json"
+}
 
 ###########################################
 #
@@ -337,12 +461,12 @@ function checkEnvironmentVariables {
 function createActiveProductPlan {
 
 	# param mapping
-	CONSUMER_INSTANCE_OWNER_ID=$1
-	PRODUCT_NAME=$2
-	CONSUMER_INSTANCE_NAME=$3
-	ASSET_NAME=$4
-	RESOURCE_NAME=$5
-	ENVIRONMENT_NAME=$6
+	CONSUMER_INSTANCE_OWNER_ID="$1"
+	PRODUCT_NAME="$2"
+	CONSUMER_INSTANCE_NAME="$3"
+	ASSET_NAME="$4"
+	RESOURCE_NAME="$5"
+	ENVIRONMENT_NAME="$6"
 
 	# Compute PlanTitle
 	PLAN_TITLE="Plan for $ASSET_NAME - $CONSUMER_INSTANCE_NAME - $ENVIRONMENT_NAME"
@@ -409,7 +533,7 @@ function computeAssetNameFromAPIservice {
 #
 # Sample:  APP_NAME (TeamName) => APP_NAME
 ######################################################
-function removeTeamNameFromApplciationName {
+function removeTeamNameFromApplicationName {
 	# remove everything after ( and any ending spaces
 	echo $1 | cut -f1 -d"(" | sed -e 's/[[:space:]]*$//'
 }

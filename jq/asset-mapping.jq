@@ -13,6 +13,7 @@
         inputs: {
           stage: $stage_name,
           apiService: "management/\($env_name)/\($srv_name)",
+          assetResourceTitle: "\($assetResourceTitle)"
         }
     }
 }

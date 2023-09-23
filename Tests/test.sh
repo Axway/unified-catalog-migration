@@ -12,7 +12,16 @@ TEMP_DIR=./trash
 
 function loginToPlatform {
 
-	axway auth login
+	echo "Connecting to Amplify platform with Axway CLI"
+	if [[ $CLIENT_ID == "" ]]
+	then
+		echo "No client id supplied => login via browser"
+		axway auth login
+	else
+		echo "Service account supplied => login headless"
+		axway auth login --client-id $CLIENT_ID --secret-file "$CLIENT_SECRET"
+	fi
+
 	# retrieve the organizationId of the connected user
 	echo ""
 	echo "Retrieving the organization ID..."
@@ -492,7 +501,25 @@ function findAllSubscriptionFromEnvironment {
 }
 
 function testRemovingTeamNameFromApplication {
-	removeTeamNameFromApplciationName "$1"
+	removeTeamNameFromApplicationName "$1"
+}
+
+function testGetMarketplaceProductFromCatalogItem {
+
+	getMarketplaceProductFromCatalogItem $1 $TEMP_DIR/product-mp-$1.json
+	echo "$TEMP_DIR/product-mp-$1.json"
+}
+
+function testGetMarketplaceProductPlanIdFromCatalogItem {
+
+	echo ""
+	echo "PlanId=$(getMarketplaceProductPlanIdFromCatalogItem "$1" $2 $3 $4 "$5")"
+}
+
+function testGetMarketplaceProductAssetResourceIdFromCatalogItem {
+
+	echo ""
+	echo "AssetResourceId=$(getMarketplaceProductAssetResourceIdFromCatalogItem "$1" $2 $3 $4 "$5")"
 }
 
 ##########################
@@ -511,6 +538,18 @@ echo "$APPLICATION-"
 APPLICATION=$(testRemovingTeamNameFromApplication "APP NAME")
 echo "$APPLICATION-"
 
+loginToPlatform
+MP_URL=$(readMarketplaceUrlFromMarketplaceName)
+
+#testGetMarketplaceProductFromCatalogItem "financial-company"
+#testGetMarketplaceProductFromCatalogItem "product"
+
+#testGetMarketplaceProductAssetResourceIdFromCatalogItem "financial-company" "1.0.0" "8a2d92278aaf023c018ab016efc806d2" "8a2d92cd8a8b66c9018ab0182e8222fb" "financial-company V1"
+
+#testGetMarketplaceProductAssetResourceIdFromCatalogItem "product-gke-itg" "1.13.1" "8a2d8fce8ab22a7c018abfda3e4165d9" "8a2d93908ab234d6018abfdb98a204ad" "product V1"
+testGetMarketplaceProductPlanIdFromCatalogItem "product-gke-itg" "1.13.1" "8a2d8fce8ab22a7c018abfda3e4165d9" "8a2d93908ab234d6018abfdb98a204ad" "product V1"
+
+#testGetMarketplaceProductPlanIdFromCatalogItem "financial-company" "1.0.0" "8a2d92278aaf023c018ab016efc806d2" "8a2d92cd8a8b66c9018ab0182e8222fb" "financial-company V1"
 
 #findAllSubscriptionFromEnvironment $1 $2
 #computeAssetNameFromAPIservice "MyService" "3.4.5"

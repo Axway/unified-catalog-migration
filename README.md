@@ -86,6 +86,16 @@ The following table show how the properties from the Unified Catalog object are 
 |  Application name (if available)     |                      |               |                          | Name                    |
 |  OwningTeam                          |                      |               | OwningTeam               | OwningTeam              |
 
+### Subscription handling
+
+Unified Catalog subscription and Marketplace are different.
+For Unified Catalog there is one subscription per application per Catalog Item
+From the Marketplace, it will be translated to one subscription per plan and per application to guaranty that the provider can enforce correctly the quota defined in the product plan.
+
+![Alt text](subscription.png)
+
+Due to that, the migration script is creating only 1 subscription for each individual resources available in the product. The subscription is reuse to add the Access to the various application.
+
 ## Usage
 
 Migrating all catalog item link to an environment:
@@ -105,4 +115,3 @@ Migrating a single catalog item link to an environment:
 * Tags from the Unified Catalog are not added to the product
 * No product visibility set based on the catalog item sharing
 * Product can be publish in only one Marketplace
-* No plan created when resource added to an existing Asset

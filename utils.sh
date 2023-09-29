@@ -1,5 +1,8 @@
 #########################################
-# Error management after a command line #
+# Error management after a command line 
+# $1: error message
+# $2: (optional) file name reference
+# $3: TODO - error criticity
 #########################################
 function error_exit {
    if [ $? -ne 0 ]
@@ -84,15 +87,11 @@ function create_productplanunit_if_not_exist() {
 #                                                        #
 # $1 (mandatory): url to call                            #
 # $2 (optional): jq expression to extract information    #
+# $3 output file where to put result                     #
 ##########################################################
 function getFromMarketplace() {
 
-	if [[ $3 == "" ]]
-	then 
-		outputFile=$TEMP_DIR/getFromMarketplaceResult.json
-	else
-		outputFile="$3"
-	fi
+	outputFile="$3"
 
 	curl -s -k -L $1 -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN > "$outputFile"
 
@@ -319,6 +318,48 @@ function checkEnvironmentVariables {
 	fi
 }
 
+##############################################################
+#
+# $1: productID
+# $2: assetResourceId
+# $3: applicationTitle
+# Return: 1 = accessRequestExist / 0 = accessRequestNotExist
+##############################################################
+function isAccessRequestAlreadyExisting {
+
+	PRODUCT_ID=$1
+	ASSET_RESOURCE_ID=$2
+	APPLICATION_NAME=$3
+	MP_SUBSCRIPTION_ID=$4
+	MP_APPLICATION_ID=$5
+	TEMP_FILE_NAME="$TEMP_DIR/mp-access-$PRODUCT_ID-$ASSET_RESOURCE_ID-$MP_SUBSCRIPTION_ID-tmp.json"
+
+	# we assume it does not exist yet
+	ACCESSREQUEST_EXIST=0
+
+	#https://mercadona.marketplace.eu.axway.com/api/v1/accessRequests?product.id=8a2d857e8acd9b8d018ad73284ee5687&assetResource.id=8a2d857e8acd9b8d018ad7316f0e5649&offset=0&limit=100&sort=%2Bname
+	getFromMarketplace "$MP_URL/api/v1/accessRequests?product.id=$PRODUCT_ID&assetResource.id=$ASSET_RESOURCE_ID" "" $TEMP_FILE_NAME
+	NB_ACCESSREQUEST=`cat $TEMP_FILE_NAME | jq -r '.totalCount'`
+
+	if [[ $NB_ACCESSREQUEST != 0 ]]
+	then
+		# filter per application.title and subscriptionID
+
+		RESULT=`cat $TEMP_FILE_NAME | jq '[ .items[] | select( .application.title=="'"$APPLICATION_NAME"'" and .subscription.id=="'$MP_SUBSCRIPTION_ID'" and .application.id=="'$MP_APPLICATION_ID'" ) ]' | jq -r '.[].id'`
+		rm $TEMP_FILE_NAME
+
+		if [[ $RESULT != '' ]]
+		then
+			# we found it
+			ACCESSREQUEST_EXIST=1
+		fi
+	fi
+
+	echo $ACCESSREQUEST_EXIST
+}
+
+
+
 #########################################################################
 # Find the Marketpalce catalog corresponding to the Unified Catalog item
 # 
@@ -536,4 +577,67 @@ function computeAssetNameFromAPIservice {
 function removeTeamNameFromApplicationName {
 	# remove everything after ( and any ending spaces
 	echo $1 | cut -f1 -d"(" | sed -e 's/[[:space:]]*$//'
+}
+
+
+###############################################################
+# Mark AccessRequest status as ACTIVE
+#
+# $1: environment name
+# $2: access request name from Marketplace (used as Title in AccessRequest)
+# $3: output file
+################################################################# 
+function markAccessRequestStatusAsSuccess {
+
+	ENV_NAME=$1
+	MP_ACCESS_REQUEST_NAME=$2
+	outputFile="$3"
+	APPROVAL=`cat ./jq/product-mp-accessrequest-managedapp-approval.jq`
+
+	# find managedAppliction first based on the nme 
+	ACCESS_REQUEST_NAME=`axway central get accessrequest -q t"itle=='$MP_ACCESS_REQUEST_NAME'" -o json | jq -r '.[0].name'`
+
+	# update the status
+	URL="$CENTRAL_URL/apis/management/v1alpha1/environments/$ENV_NAME/accessrequests/$ACCESS_REQUEST_NAME/status"
+	curl -s -k -L -X PUT $URL -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN -d "$APPROVAL" > $outputFile
+}
+
+###############################################################
+# Mark ManagedApp status as ACTIVE
+#
+# $1: environment name
+# $2: application name from Marketplace (used as Title in ManagedApp)
+# $3: output file
+################################################################# 
+function markManagedAppStatusAsSuccess {
+
+	ENV_NAME=$1
+	MP_MANAGED_APPLICATION_NAME=$2
+	outputFile="$3"
+	APPROVAL="`cat ./jq/product-mp-accessrequest-managedapp-approval.jq`"
+
+	# find managedAppliction first based on the nme 
+	MANAGED_APPLICATION_NAME=`axway central get managedapp -q t"itle=='$MP_MANAGED_APPLICATION_NAME'" -o json | jq -r '.[0].name'`
+
+	# update the status
+	URL="$CENTRAL_URL/apis/management/v1alpha1/environments/$ENV_NAME/managedapplications/$MANAGED_APPLICATION_NAME/status"
+	curl -s -k -L -X PUT $URL -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN -d "$APPROVAL" > $outputFile
+}
+
+
+####################################
+# Retrieve user guid from its email
+#
+# $1: user email
+# Output: user guid
+####################################
+function findUserFromEmail {
+
+	EMAIL="$1"
+	
+	URL="https://platform.axway.com/api/v1/org/$PLATFORM_ORGID/user"
+
+	USER_GUID=`curl -s -k -L $URL -H "Content-Type: application/json" -H "X-Axway-Tenant-Id: $PLATFORM_ORGID" --header 'Authorization: Bearer '$PLATFORM_TOKEN | jq '[ .result[] | select( .email=="'$EMAIL'" ) ]' | jq -r '.[].guid'`
+
+	echo "$USER_GUID"
 }

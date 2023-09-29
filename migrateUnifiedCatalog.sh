@@ -368,7 +368,6 @@ function migrate() {
 
 			if [ `jq length $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-published.json` == 0 ]
 			then
-				# TODO - Manage publication to all Marketplaces?
 				echo "		Publishing $CONSUMER_INSTANCE_NAME to Marketplace $MARKETPLACE_TITLE ($MP_GUID)..."
 				if [[ $CONSUMER_INSTANCE_OWNER_ID == null ]]
 				then
@@ -387,98 +386,110 @@ function migrate() {
 			# WARNING: Consumerinstance != Catalog item - only the AcatlogItem/properties.apiServerInfor.consumerInstance link them
 			##########
 
-			# read catalog id from catalog name
+			# read catalog item subscriptions ACTIVE / CHANGE_REQUESTED => query=state=in=(ACTIVE,CHANGE_REQUESTED)
 			echo "	Reading associated Unified Catalog subscription(s)...."
-			curl -s --location --request GET $CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/subscriptions?query=%28state==ACTIVE%29' --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemSubscriptions.json
-			echo "	Found " `cat $TEMP_DIR/catalogItemSubscriptions.json | jq '.|length'` " ACTIVE subscription(s)"
+			curl -s --location --request GET $CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems/'$CATALOG_ID'/subscriptions?query=state=in=%28ACTIVE,CHANGE_REQUESTED%29' --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItemSubscriptions.json
+			echo "	Found " `cat $TEMP_DIR/catalogItemSubscriptions.json | jq '.|length'` " ACTIVE or CHANGE_REQUESTED subscription(s)"
 
 			# loop on subscription
-			cat $TEMP_DIR/catalogItemSubscriptions.json | jq -rc ".[] | {subId: .id, subName: .name, teamId: .owningTeamId, appName: .properties[0].value.appName}" | while IFS= read -r line ; do
+			cat $TEMP_DIR/catalogItemSubscriptions.json | jq -rc ".[] | {subId: .id, subName: .name, teamId: .owningTeamId, appName: .properties[0].value.appName, ownerId: .metadata.createUserId}" | while IFS= read -r line ; do
 				# read subscriptionId, application name, teamId and subscription name
 				SUBSCRIPTION_ID=$(echo $line | jq -r '.subId')
-				SUBSCRIPTION_NAME=$(echo $line | jq -r '.subName')
-				SUBSCRIPTION_OWNING_TEAM=$(echo $line | jq -r '.teamId')
-				SUBSCRIPTION_APP_NAME=$(echo $line | jq -r '.appName')
+				UC_SUBSCRIPTION_NAME=$(echo $line | jq -r '.subName')
+				UC_SUBSCRIPTION_OWNING_TEAM=$(echo $line | jq -r '.teamId')
+				UC_SUBSCRIPTION_OWNER_ID=$(echo $line | jq -r '.ownerId')
+				UC_APPLICATION_NAME=$(echo $line | jq -r '.appName')
 
-				echo "		Need to migrate subscription ($SUBSCRIPTION_NAME) for team ($SUBSCRIPTION_OWNING_TEAM) using application ($SUBSCRIPTION_APP_NAME) to marketplace ($MARKETPLACE_TITLE)"
+				echo "		Need to migrate subscription ($UC_SUBSCRIPTION_NAME) for team ($UC_SUBSCRIPTION_OWNING_TEAM) using application ($UC_APPLICATION_NAME) to marketplace ($MARKETPLACE_TITLE)"
 
 				echo "			Searching product id in marketplace..."
 				# replace space with %20
 				SANITIZE_CATALOG_NAME=${CONSUMER_INSTANCE_TITLE// /%20}
-
 				getMarketplaceProductFromCatalogItem $SANITIZE_CATALOG_NAME "$TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME.json"
 
 				MP_PRODUCT_ID=`cat  $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME.json | jq -r ' .[0].id'`
 				MP_PRODUCT_VERSION_ID=`cat  $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME.json | jq -r ' .[0].latestVersion.id'`
 				echo "			Found product id in marketplace: $MP_PRODUCT_ID"
 				echo "			Found product latest version id in marketplace: $MP_PRODUCT_VERSION_ID"
-				
-				# it is forbidden for the same team to have 2 subsctiptions on the same plan
-				getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$SUBSCRIPTION_OWNING_TEAM" "" "$TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json"
 
 				echo "			Search the PlanId that manage the current service..."
 				MP_PRODUCT_PLAN_ID=$(getMarketplaceProductPlanIdFromCatalogItem "$ASSET_RESOURCE_TITLE" $CONSUMER_INSTANCE_VERSION $MP_PRODUCT_ID $MP_PRODUCT_VERSION_ID "$ASSET_TITLE")
 				echo "			Found PlanId: $MP_PRODUCT_PLAN_ID"	
 
 				echo "			Search if a susbcription exits for that plan..."
+				# it is forbidden for the same team to have 2 subsctiptions on the same plan
 				# 1st check that we have subscriptions
+				# we assume subscription does not exist yet
+				NEED_TO_CREATE_SUBSCRIPTION=1
+				# can we or not add access - we cannot when using the same susbcription/resource with multiple apps.
+				CAN_CREATE_ACCESS_REQUEST=1
+				# read MP subscription attached to the product
+				# base on team.
+				#getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID&owner.id=$UC_SUBSCRIPTION_OWNING_TEAM" "" "$TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json"
+				# with x-private, the team filter is not interesting.
+				getFromMarketplace "$MP_URL/api/v1/subscriptions?product.id=$MP_PRODUCT_ID" "" "$TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json"
 				NB_SUBSCRIPTION=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq -r '.totalCount'`
 
 				if [[ $NB_SUBSCRIPTION != 0 ]]
 				then
-					# on peut chercher dans la liste...
-					SUBSCPRIPTION_ID=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq '[ .items[] | select( .plan.id=="'$MP_PRODUCT_PLAN_ID'" ) ]' | jq -r '.[0].id'`
+					# we can search within the list
+					echo "				Subscription list not empty, do we already have one subscription for team $UC_SUBSCRIPTION_OWNING_TEAM and planId..."
+					export MP_SUBSCRIPTION_ID=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq '[ .items[] | select( .plan.id=="'$MP_PRODUCT_PLAN_ID'" and .owner.id=="'$UC_SUBSCRIPTION_OWNER_ID'" ) ]' | jq -r '.[0].id'`
 
-					# hack for the next if to work
-					if [[ $SUBSCPRIPTION_ID == null ]]
+					# subscription not found?
+					if [[ $MP_SUBSCRIPTION_ID == null ]]
 					then
+						echo "				Cannot find subscription in existing one -> need to create a new subscription"
 						# the susbcription does not exist and we need to create a new one.
-						SUBSCPRIPTION_ID=''
+						NEED_TO_CREATE_SUBSCRIPTION=1
+					else
+						echo "				Found existing subscription=$MP_SUBSCRIPTION_ID"
+						NEED_TO_CREATE_SUBSCRIPTION=0
+						echo "				/!\ Only one subscription at a time for Free plan.... -> will not be able to create further access request"
+						CAN_CREATE_ACCESS_REQUEST=0
 					fi
-
-					echo "			Found subscription=$SUBSCPRIPTION_ID"
 				fi
 
-				if [[ $SUBSCPRIPTION_ID != '' ]]
+				if [[ $NEED_TO_CREATE_SUBSCRIPTION == 1 ]]
 				then
-					echo "				A subscription already exist for team $SUBSCRIPTION_OWNING_TEAM and planId... No need to create."
-					export MP_SUBSCRIPTION_ID=`cat $TEMP_DIR/product-mp-$SANITIZE_CATALOG_NAME-subscriptions.json | jq -r ".items[0].id"`
-				else
-					echo "			Creating subscription..."
-					SUBSCRIPTION_NAME="UC - Subscription for $CATALOG_APISERVICE - $CATALOG_APISERVICEENV"
-					echo "			New Subscription name: $SUBSCRIPTION_NAME"
+					echo "				Creating subscription..."
+					UC_SUBSCRIPTION_NAME="UC - Subscription for $CATALOG_APISERVICE - $CATALOG_APISERVICEENV"
+					echo "				New Subscription name: $UC_SUBSCRIPTION_NAME for user >>>"
 
-					echo "			Posting susbcription creation..."
-					jq -n -f ./jq/product-mp-subscription.jq --arg subscriptionTitle "$SUBSCRIPTION_NAME" --arg teamId $SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
+					echo "				Posting susbcription creation..."
+					jq -n -f ./jq/product-mp-subscription-private.jq --arg subscriptionTitle "$UC_SUBSCRIPTION_NAME" --arg teamId $UC_SUBSCRIPTION_OWNING_TEAM --arg planId $MP_PRODUCT_PLAN_ID --arg productId $MP_PRODUCT_ID --arg userGuid $UC_SUBSCRIPTION_OWNER_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json
 					postToMarketplace "$MP_URL/api/v1/subscriptions" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
 					error_post "Problem creating subscription on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json
 					# read the subscriptionId from the created susbcription
 					export MP_SUBSCRIPTION_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-subscription-$SUBSCRIPTION_ID-created.json | jq -r ".id"`
 				fi
 
-				# Now time to create application and access request
-				if [[ $SUBSCRIPTION_APP_NAME == null ]]
+				# Now, time to create application and access request
+				if [[ $UC_APPLICATION_NAME == null ]]
 				then
 					echo "			/!\ no application found, cannot create ManagedApplication / AccessRequest"
 				else
-
-					echo "			Need to create app - remove the team name in application name"
+					echo "			Unified Catalog application exist, need to create Marketplace application -> remove the team name from UC application name"
 					# appName (team) -> appName
-					SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME=$(removeTeamNameFromApplicationName "$SUBSCRIPTION_APP_NAME")
-					#SUBCRIPTION_APP_NAME_FOR_QUERY=${SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME// /%20}
-					# check if managedapp not already exists to avoid duplicating it
-					MP_MANAGED_APP_ID=$(getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=${SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME// /%20}&sort=-metadata.modifiedAt%2C%2Bname" ".items[0].id")
+					MP_APPLICATION_NAME=$(removeTeamNameFromApplicationName "$UC_APPLICATION_NAME")
+					MP_APPLICATION_NAME_TMP=${MP_APPLICATION_NAME// /-}
+					MP_APPLICATION_NAME_SANITIZED=${MP_APPLICATION_NAME_TMP//\//-}
 
-					if [[ $MP_MANAGED_APP_ID == "null" ]]
+					# check if managedapp not already exists to avoid duplicating it
+					echo "				is $MP_APPLICATION_NAME exist on the Marketplace?"
+					getFromMarketplace "$MP_URL/api/v1/applications?limit=10&offset=0&search=${MP_APPLICATION_NAME// /%20}&sort=-metadata.modifiedAt%2C%2Bname" "" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-applications-search.json"
+					MP_APPLICATION_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-applications-search.json | jq -r '.items[0].id'`
+
+					if [[ $MP_APPLICATION_ID == "null" ]]
 					then
 						# application does not exist yet... so we can create it
-						echo "			Create managed application $SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME...."
-						jq -n -f ./jq/product-mp-application.jq --arg applicationTitle "$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME" --arg teamId $SUBSCRIPTION_OWNING_TEAM > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json
-						postToMarketplace "$MP_URL/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
-						error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json
-						MP_MANAGED_APP_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-created.json | jq -r ".id"`
+						echo "					Create MP application $MP_APPLICATION_NAME...."
+						jq -n -f ./jq/product-mp-application-private.jq --arg applicationTitle "$MP_APPLICATION_NAME" --arg teamId $UC_SUBSCRIPTION_OWNING_TEAM --arg userGuid $UC_SUBSCRIPTION_OWNER_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_NAME_SANITIZED.json
+						postToMarketplace "$MP_URL/api/v1/applications" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_NAME_SANITIZED.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_NAME_SANITIZED-created.json
+						error_post "Problem creating application on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_NAME_SANITIZED-created.json
+						export MP_APPLICATION_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_NAME_SANITIZED-created.json | jq -r ".id"`
 					else
-						echo "			$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME managedApp is already existing."
+						echo "					$MP_APPLICATION_NAME application is already existing."
 					fi
 
 					# Now we need to check that we have all elements to create the access request ie CRD/ARD otherwise it will fails
@@ -490,19 +501,59 @@ function migrate() {
 		
 					if [[ $ARD != null ]]
 					then
-						echo "			Create request access...."
-
-						# TODO check that access request is not existing
-						ACCESS_REQUEST_NAME="$SUBSCRIPTION_APP_NAME_WITHOUT_TEAM_NAME"
+						echo "			Check if access request exists...."
+						ACCESS_REQUEST_NAME="$MP_APPLICATION_NAME"
 
 						MP_ASSETRESOURCE_ID=$(getMarketplaceProductAssetResourceIdFromCatalogItem "$ASSET_RESOURCE_TITLE" "$CONSUMER_INSTANCE_VERSION" "$MP_PRODUCT_ID" "$MP_PRODUCT_VERSION_ID" "$ASSET_TITLE")
-						jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json
-						postToMarketplace "$MP_URL/api/v1/applications/$MP_MANAGED_APP_ID/accessRequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
-						error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-access-created.json
+						# Is access request already existing?
+						ACCESS_REQUEST_EXISTS=$(isAccessRequestAlreadyExisting "$MP_PRODUCT_ID" "$MP_ASSETRESOURCE_ID" "$ACCESS_REQUEST_NAME" "$MP_SUBSCRIPTION_ID" "$MP_APPLICATION_ID")
 
-						# TODO - Activate the AccessRequest / ManagedApp?
+						if [[ $ACCESS_REQUEST_EXISTS == 0 ]]
+						then
+							# Access Request does not exist, we can create it
+							echo "			Access request does not exist -> creating it...."
 
-						# TODO - Manage Credentials?
+							# WARNING HERE: 
+							# - we cannot anymore accessing Resouce via 2 differents application under the same Susbcription
+							# - free plan does not allow multiple subscriptions
+
+							if [[ $CAN_CREATE_ACCESS_REQUEST == 1 ]]
+							then
+								# we can add the access
+								jq -n -f ./jq/product-mp-accessrequest.jq --arg accessRequestTile "$ACCESS_REQUEST_NAME" --arg productId "$MP_PRODUCT_ID" --arg productIdVersion "$MP_PRODUCT_VERSION_ID" --arg assetResourceId "$MP_ASSETRESOURCE_ID" --arg subscriptionId $MP_SUBSCRIPTION_ID > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_ID-access.json
+								postToMarketplace "$MP_URL/api/v1/applications/$MP_APPLICATION_ID/accessRequests" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_ID-access.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_ID-access-created.json
+								error_post "Problem creating application access on Marketplace." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_ID-access-created.json
+
+								# read id 
+								ACCESS_REQUEST_ID=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_ID-access-created.json | jq -r '.id'`
+
+								echo "			Mark access request $ACCESS_REQUEST_NAME status as susccess...."
+								# change status of the accessrequest from Pending to Success
+
+								MP_ACCESSREQUEST_NAME=`cat $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MP_APPLICATION_ID-access-created.json | jq -r ".title"`
+								markAccessRequestStatusAsSuccess "$CATALOG_APISERVICEENV" "$MP_ACCESSREQUEST_NAME" $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-accessrequest-$ACCESS_REQUEST_ID-statusUpdated.json
+								error_post "Problem activating access request." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-accessrequest-$ACCESS_REQUEST_ID-statusUpdated.json
+
+								# ManagedApp is created only when the AccessRequest is...
+								echo "			Mark managed application $MP_APPLICATION_NAME status as Success...."
+								# change status of the app from Pending to Success
+								# find the managed app
+								MANAGEDAPP_TITLE=`axway central get managedapp -s $CATALOG_APISERVICEENV -q "title=='$MP_APPLICATION_NAME'" -o json | jq -r '.[0].title'`
+
+								if [[ $MANAGEDAPP_TITLE != null ]]
+								then
+									MANAGEDAPP_TITLE_WITHOUT_SPACE=${MANAGEDAPP_TITLE// /-}
+									MANAGEDAPP_TITLE_SANITIZED=${MANAGEDAPP_TITLE_WITHOUT_SPACE//\//-}
+
+									markManagedAppStatusAsSuccess "$CATALOG_APISERVICEENV" "$MANAGEDAPP_TITLE" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MANAGEDAPP_TITLE_SANITIZED-statusUpdated.json"
+									error_post "Problem activating application." $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-application-$MANAGEDAPP_TITLE_SANITIZED-statusUpdated.json
+								fi
+							else
+								echo "			/!\ Cannot add access to $MP_APPLICATION_NAME using subscription $UC_SUBSCRIPTION_NAME : access already exist for another application"
+							fi
+						fi
+
+						# TODO - Manage Credentials? => Impossible without Gateway connectivity
 						#CRD=`cat $TEMP_DIR/apis-$CATALOG_APISERVICEENV-$CATALOG_APISERVICE-instance-check.json | jq -rc ".crd"`
 					else
 						echo "			/!\ Cannot proceed with AccessRequest as the service does not have the CredentialRequestDefinition nor the AccessRequestDefinition"

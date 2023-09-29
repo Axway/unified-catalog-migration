@@ -522,6 +522,79 @@ function testGetMarketplaceProductAssetResourceIdFromCatalogItem {
 	echo "AssetResourceId=$(getMarketplaceProductAssetResourceIdFromCatalogItem "$1" $2 $3 $4 "$5")"
 }
 
+function testActivateAccessRequest {
+
+	markAccessRequestStatusAsSuccess "$1" "$2" "$3"
+}
+
+function testActivateManagedApplication {
+
+	markManagedAppStatusAsSuccess "$1" "$2" "$3"
+}
+
+function testIsExistingAccessRequest {
+
+	echo "isAccessRequestAlreadyExisting"
+
+# positive test
+	MP_PRODUCT_ID="8a2d857e8acd9b8d018ad8a8805f634e"
+	MP_ASSETRESOURCE_ID="8a2d889f8acd9bcf018ad85833165a36"
+	APPLICATION_NAME="EISCNA - Server application"
+	MP_SUBSCRIPTION_ID="8a2d8ef48acd9a8e018ad8a8a6e5586c"
+	MP_APPLICATION_ID="8a2d857e8acd9b8d018ad732acf556a2"
+
+	echo "	Positive: 1=$(isAccessRequestAlreadyExisting "$MP_PRODUCT_ID" "$MP_ASSETRESOURCE_ID" "$APPLICATION_NAME" "$MP_SUBSCRIPTION_ID" "$MP_APPLICATION_ID")"
+
+# negative test with wrong subscription
+	MP_SUBSCRIPTION_ID=""
+
+	echo "	Negative subscription: 0=$(isAccessRequestAlreadyExisting "$MP_PRODUCT_ID" "$MP_ASSETRESOURCE_ID" "$APPLICATION_NAME" "$MP_SUBSCRIPTION_ID" "$MP_APPLICATION_ID")"
+
+# negative test with wrong application
+	MP_SUBSCRIPTION_ID="8a2d8ef48acd9a8e018ad8a8a6e5586c"
+	MP_APPLICATION_ID=""
+
+	echo "	Negative application: 0=$(isAccessRequestAlreadyExisting "$MP_PRODUCT_ID" "$MP_ASSETRESOURCE_ID" "$APPLICATION_NAME" "$MP_SUBSCRIPTION_ID" "$MP_APPLICATION_ID")"
+
+# faulty test
+	MP_PRODUCT_ID=""
+	MP_ASSETRESOURCE_ID=""
+	APPLICATION_NAME=""
+	MP_SUBSCRIPTION_ID=""
+	MP_APPLICATION_ID=""
+
+	echo "	Faulty: 0=$(isAccessRequestAlreadyExisting "$MP_PRODUCT_ID" "$MP_ASSETRESOURCE_ID" "$APPLICATION_NAME" "$MP_SUBSCRIPTION_ID" "$MP_APPLICATION_ID")"
+}
+
+function readCatalogSubscriptionApplication {
+
+	# for each catId read subscriptions
+	URL=$CENTRAL_URL'/api/unifiedCatalog/v1/subscriptions?pageSize=50&sort=metadata.modifyTimestamp,DESC' 
+	curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogSubscriptions.json
+
+	# for each subscription read aplication name
+	cat $TEMP_DIR/catalogSubscriptions.json | jq -rc ".[] | {subId: .id, subName: .name, teamId: .owningTeamId, appName: .properties[0].value.appName}" | while IFS= read -r line ; do
+
+		# read subscriptionId, application name, teamId and subscription name
+		SUBSCRIPTION_ID=$(echo $line | jq -r '.subId')
+		SUBSCRIPTION_NAME=$(echo $line | jq -r '.subName')
+		SUBSCRIPTION_OWNING_TEAM=$(echo $line | jq -r '.teamId')
+		SUBSCRIPTION_APP_NAME=$(echo $line | jq -r '.appName')
+
+		echo "$SUBSCRIPTION_NAME;$SUBSCRIPTION_APP_NAME"
+
+	done
+
+
+}
+
+function testFindUserFromEmail {
+
+	EMAIL="cbordier@axway.com"
+
+	echo $(findUserFromEmail "$EMAIL")
+}
+
 ##########################
 ####### START HERE #######
 ##########################
@@ -533,13 +606,28 @@ function testGetMarketplaceProductAssetResourceIdFromCatalogItem {
 #	echo "Paramter; $1"
 #fi
 
-APPLICATION=$(testRemovingTeamNameFromApplication "APP NAME (TeanName)")
+APPLICATION_NAME="APP NAME (TeanName)"
+APPLICATION=$(testRemovingTeamNameFromApplication "$APPLICATION_NAME")
 echo "$APPLICATION-"
-APPLICATION=$(testRemovingTeamNameFromApplication "APP NAME")
+APPLICATION_NAME="APP NAME"
+APPLICATION=$(testRemovingTeamNameFromApplication "$APPLICATION_NAME")
 echo "$APPLICATION-"
 
+APPLICATION_NAME="product/product-assortment/product/product/v1 (Mercadona)"
+MP_APPLICATION_NAME=$(removeTeamNameFromApplicationName "$APPLICATION_NAME")
+MP_APPLICATION_NAME_TMP=${MP_APPLICATION_NAME// /-}
+MP_APPLICATION_NAME_SANITIZED=${MP_APPLICATION_NAME_TMP//\//-}
+echo "Sanitizze=$MP_APPLICATION_NAME_SANITIZED-"
+
 loginToPlatform
+CENTRAL_URL=$(getCentralURL)
 MP_URL=$(readMarketplaceUrlFromMarketplaceName)
+
+findUserFromEmail
+exit 1
+#readCatalogSubscriptionApplication
+
+testIsExistingAccessRequest
 
 #testGetMarketplaceProductFromCatalogItem "financial-company"
 #testGetMarketplaceProductFromCatalogItem "product"
@@ -547,9 +635,12 @@ MP_URL=$(readMarketplaceUrlFromMarketplaceName)
 #testGetMarketplaceProductAssetResourceIdFromCatalogItem "financial-company" "1.0.0" "8a2d92278aaf023c018ab016efc806d2" "8a2d92cd8a8b66c9018ab0182e8222fb" "financial-company V1"
 
 #testGetMarketplaceProductAssetResourceIdFromCatalogItem "product-gke-itg" "1.13.1" "8a2d8fce8ab22a7c018abfda3e4165d9" "8a2d93908ab234d6018abfdb98a204ad" "product V1"
-testGetMarketplaceProductPlanIdFromCatalogItem "product-gke-itg" "1.13.1" "8a2d8fce8ab22a7c018abfda3e4165d9" "8a2d93908ab234d6018abfdb98a204ad" "product V1"
+#testGetMarketplaceProductPlanIdFromCatalogItem "product-gke-itg" "1.13.1" "8a2d8fce8ab22a7c018abfda3e4165d9" "8a2d93908ab234d6018abfdb98a204ad" "product V1"
 
 #testGetMarketplaceProductPlanIdFromCatalogItem "financial-company" "1.0.0" "8a2d92278aaf023c018ab016efc806d2" "8a2d92cd8a8b66c9018ab0182e8222fb" "financial-company V1"
+
+#testActivateAccessRequest "gke-itg" "REVO - PRODAMAE" $TEMP_DIR/product-mp-revo-accessUpdated.json
+#testActivateManagedApplication "gke-itg" "REVO - PRODAMAE" $TEMP_DIR/product-mp-revo-statusUpdated.json
 
 #findAllSubscriptionFromEnvironment $1 $2
 #computeAssetNameFromAPIservice "MyService" "3.4.5"

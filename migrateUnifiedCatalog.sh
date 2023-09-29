@@ -4,7 +4,7 @@
 # - add the sharing of catalog?
 
 # Sourcing user-provided env properties
-source ./config/envCB.properties
+source ./config/env.properties
 
 # add all utility functions
 source ./utils.sh

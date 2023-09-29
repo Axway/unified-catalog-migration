@@ -97,7 +97,7 @@ From the Marketplace, it will be translated to one subscription per plan and per
 Due to that, the migration script is creating only 1 subscription for each individual resources available in the product. The subscription is reused to add the Access to the various application.
 
 **Limitation**:
-On Marketplace side, it is not possible to access the same resource using one subscription and multiple resources.
+On Marketplace side, it is not possible to access the same resource using one subscription and multiple applications to help provider to enforce correctly the subscription plan quotas.
 The migration script displays this message `/!\ Cannot add access to {UNIFED_CATAOLOGSUBSCRIPTION_APPLICATION_NAME} using subscription {MARKETPLACE_SUBSCRIPTION_NAME} : access already exist for another application` if multiple applications try to access the same resource using the same subscription.
 
 ## Usage

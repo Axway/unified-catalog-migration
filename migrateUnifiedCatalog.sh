@@ -445,8 +445,15 @@ function migrate() {
 					else
 						echo "				Found existing subscription=$MP_SUBSCRIPTION_ID"
 						NEED_TO_CREATE_SUBSCRIPTION=0
-						echo "				/!\ Only one subscription at a time for Free plan.... -> will not be able to create further access request"
-						CAN_CREATE_ACCESS_REQUEST=0
+
+						if [[ $PLAN_QUOTA == 'unlimited' ]]
+						then
+							echo "				Unlimited quota allows to be able to create further access request"
+							CAN_CREATE_ACCESS_REQUEST=1
+						else
+							echo "				/!\ Only one subscription at a time for Free plan.... -> will not be able to create further access request"
+							CAN_CREATE_ACCESS_REQUEST=0
+						fi
 					fi
 				fi
 

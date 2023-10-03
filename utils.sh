@@ -1,7 +1,7 @@
 #########################################
 # Error management after a command line 
 # $1: error message
-# $2: (optional) file name reference
+# $2: (optional) file name referene
 # $3: TODO - error criticity
 #########################################
 function error_exit {
@@ -528,12 +528,20 @@ function createActiveProductPlan {
 	export PRODUCT_PLAN_ID=`jq -r .[0].metadata.id $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-created.json`
 
 	# Adding plan quota
-	echo "		Adding plan quota..."
-	jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg unit $PLAN_UNIT_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
-	# update the quota limit - need to put it in the environment list so that jq can access the value.
-	PLAN_QUOTA=`echo $PLAN_QUOTA`
-	export PLAN_QUOTA
-	jq '.spec.pricing.limit.value=($ENV.PLAN_QUOTA|tonumber)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
+	if [[ $PLAN_QUOTA == 'unlimited' ]]
+	then
+		echo "		Adding unlimited plan quota..."
+		jq -n -f ./jq/product-plan-quota-unlimited.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg unit $PLAN_UNIT_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
+	else
+		echo "		Adding limited plan quota..."
+		jq -n -f ./jq/product-plan-quota.jq --arg product_plan_name $PRODUCT_PLAN_NAME --arg unit $PLAN_UNIT_NAME --arg resource_name $ASSET_NAME/$RESOURCE_NAME > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json
+		# update the quota limit - need to put it in the environment list so that jq can access the value.
+		PLAN_QUOTA=`echo $PLAN_QUOTA`
+		export PLAN_QUOTA
+		jq '.spec.pricing.limit.value=($ENV.PLAN_QUOTA|tonumber)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json
+	fi
+
+	# posting to central
 	axway central create -f $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-updated.json -y -o json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json
 	error_exit "Problem with creating Quota" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-plan-quota-created.json"
 

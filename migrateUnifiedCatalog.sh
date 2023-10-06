@@ -134,8 +134,7 @@ function migrate() {
 					CATALOG_CATEGORIES=$TMP
 				fi
 
-# TODO - Fix for MacOS <<< -> <
-			done <<< `cat $TEMP_DIR/catalogItemCategoryId.txt`
+			done < $TEMP_DIR/catalogItemCategoryId.txt
 			echo "			categories found = $CATALOG_CATEGORIES"
 		else
 			echo "			no categories found!"

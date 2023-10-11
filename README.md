@@ -19,7 +19,7 @@ The script will:
 * [jq](https://jqlang.github.io/jq/)
 * [curl](https://curl.se/)
 
-The script can be run on Microsfot Windows bash shell or on Linux
+The script can be run on Microsoft Windows bash shell or on Linux
 
 ## Configuration
 

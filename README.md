@@ -1,4 +1,4 @@
-# migrateUnifiedCatalog
+# Unified Catalog Migration
 
 Tool for migrating Unified Catalog service into Marketplace product
 
@@ -15,9 +15,9 @@ The script will:
 
 ## Pre requisites
 
-* Axway CLI
-* jq
-* curl
+* [Axway CLI](https://docs.axway.com/bundle/amplify-central/page/docs/integrate_with_central/cli_central/index.html)
+* [jq](https://jqlang.github.io/jq/)
+* [curl](https://curl.se/)
 
 The script can be run under windows bash shell or Linux
 

@@ -25,34 +25,35 @@ The script can be run on Microsfot Windows bash shell or on Linux
 
 An environment file is available in config directory to setup some properties:
 
-* CLIENT_ID to use a service account instead of a real user
-* CLIENT_SECRET to set the service account private key.
-* CENTRAL_ENVIRONMENT to set the environment where to source the Catalog Items
-* PLAN_TITLE to set the default plan title
-* PLAN_QUOTA to set the default plan quota
-* PLAN_APPROVAL_MODE - automatic (default) or manual
-* PUBLISH_TO_MARKETPLACES to know if products need to be published to Marketplace
-* MARKETPLACE_TITLE to give the Marketplace title where the product needs to be published
-* ASSET_NAME_FOLLOW_SERVICE_VERSION to help naming the Asset based on the APIService name (see Note below)
+* _CLIENT_ID_ to use a service account instead of a real user
+* _CLIENT_SECRET_ to set the service account private key.
+* _CENTRAL_ENVIRONMENT_ to set the environment where to source the Catalog Items
+* _PLAN_TITLE_ to set the default plan title
+* _PLAN_QUOTA_ to set the default plan quota
+* _PLAN_APPROVAL_MODE_ - automatic (default) or manual
+* _PUBLISH_TO_MARKETPLACES_ to know if products need to be published to Marketplace
+* _MARKETPLACE_TITLE_ to give the Marketplace title where the product needs to be published
+* _ASSET_NAME_FOLLOW_SERVICE_VERSION_ to help naming the Asset based on the APIService name (see Note below)
 
-Note regarding ASSET_NAME_FOLLOW_SERVICE_VERSION:
+Note regarding _ASSET_NAME_FOLLOW_SERVICE_VERSION_:
  When same service (same name) exists in multiple environments, we will create 1 Asset per major service release and only one Product
- For that you need to set ASSET_NAME_FOLLOW_SERVICE_VERSION=Y
+ For that you need to set _ASSET_NAME_FOLLOW_SERVICE_VERSION=Y_
 
 Sample:
 
-Env1: APIService1 - v1.0.0
-Env2: APIService1 - v1.0.1
-Env3: APIService1 - v2.0.0
+* Env1: APIService1 - v1.0.0
+* Env2: APIService1 - v1.0.1
+* Env3: APIService1 - v2.0.0
 
-After Migration: using ASSET_NAME_FOLLOW_SERVICE_VERSION=Y
- Asset APIService1 V1 linked to APIService1 - v1.0.0 and APIService1 - v1.0.1
- Asset APIService1 V2 linked to APIService1 - v2.0.0
- Product APIService1 linked to Asset APIService1 V1 and Asset APIService1 V1
+After Migration: using _ASSET_NAME_FOLLOW_SERVICE_VERSION=Y_
 
-After Migration: using ASSET_NAME_FOLLOW_SERVICE_VERSION=N
- Asset APIService1 linked to APIService1 - v1.0.0 and APIService1 - v1.0.1 and APIService1 - v2.0.0
- Product APIService1 linked to Asset APIService1
+* Asset APIService1 V1 linked to APIService1 - v1.0.0 and APIService1 - v1.0.1
+* Asset APIService1 V2 linked to APIService1 - v2.0.0
+* Product APIService1 linked to Asset APIService1 V1 and Asset APIService1 V1
+
+After Migration: using _ASSET_NAME_FOLLOW_SERVICE_VERSION=N_
+* Asset APIService1 linked to APIService1 - v1.0.0 and APIService1 - v1.0.1 and APIService1 - v2.0.0
+* Product APIService1 linked to Asset APIService1
 
 ## Mapping Unified Catalog => Marketplace
 
@@ -76,7 +77,7 @@ The following table shows how the properties from the Unified Catalog object are
 |                                      |                      |               |                          |                         |
 | **CatalogItem (= consumerInstance)** |                      |               |                          |                         |
 |  Image/base64                        | Icon                 | Icon          |                          |                         |
-|  Categorie(s)                        |                      | Categorie(s)  |                          |                         |
+|  Category(ies)                       |                      | Category(ies) |                          |                         |
 |                                      |                      |               |                          |                         |
 | **CatalogItemDocumentation**         |                      |               |                          |                         |
 |  Value                               |                      | Article       |                          |                         |

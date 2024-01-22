@@ -28,8 +28,7 @@ function migrate() {
 	# map parameters
 	PLATFORM_ORGID=$1
 	PLATFORM_TOKEN=$2
-	STAGE_NAME=$3
-	INPUT_TITLE=$4
+	INPUT_TITLE=$3
 
 	# Should we migrate all or just one?
 	if [[ $INPUT_TITLE == '' ]]
@@ -164,7 +163,7 @@ function migrate() {
 				# add asset mapping
 				echo "			Creating asset mapping for linking with API service..." 
 				
-				jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" --arg assetResourceTitle "$ASSET_RESOURCE_TITLE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
+				jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" --arg assetResourceTitle "$ASSET_RESOURCE_TITLE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
 				echo "	Posting asset mapping to Central"
 				axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
 				error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
@@ -213,7 +212,7 @@ function migrate() {
 
 			# adding the mapping to the service
 			echo "	Creating asset mapping for linking with API service..." 
-			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg stage_name "$STAGE_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" --arg assetResourceTitle "$ASSET_RESOURCE_TITLE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
+			jq -n -f ./jq/asset-mapping.jq --arg asset_name "$ASSET_NAME" --arg env_name "$CATALOG_APISERVICEENV" --arg srv_name "$CATALOG_APISERVICE" --arg assetResourceTitle "$ASSET_RESOURCE_TITLE" > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json
 			echo "	Posting asset mapping to Central"
 			axway central create -f $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping.json -y -o json > $TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json
 			error_exit "Problem creating asset mapping" "$TEMP_DIR/asset-$CONSUMER_INSTANCE_NAME-mapping-created.json"
@@ -649,11 +648,6 @@ ORGANIZATION_REGION=$(axway auth list --json | jq -r '.[0] .org .region')
 echo "Done"
 
 echo ""
-echo "Preparing a stage if not available"
-create_stage_if_not_exist
-echo "Done."
-
-echo ""
 echo "Preparing product plan unit if not available"
 create_productplanunit_if_not_exist
 echo "Done."
@@ -663,10 +657,10 @@ echo ""
 if [[ $# == 0 ]]
 then
 	echo "Migrating all Unified Catalog items belonging to $CENTRAL_ENVIRONMENT environment into Asset and Product"
-	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME
+	migrate $PLATFORM_ORGID $PLATFORM_TOKEN
 else
 	echo "Migrating $1 Unified Catalog item into Asset and Product"
-	migrate $PLATFORM_ORGID $PLATFORM_TOKEN $STAGE_NAME "$1"
+	migrate $PLATFORM_ORGID $PLATFORM_TOKEN "$1"
 fi
  
 echo "Done."

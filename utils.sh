@@ -307,13 +307,13 @@ function checkEnvironmentVariables {
 	
 	if [[ $CENTRAL_ENVIRONMENT == '' ]]
 	then
-		echo "CENTRAL_ENVIRONMENT vairable is not set" 
+		echo "CENTRAL_ENVIRONMENT variable is not set" 
 		exit 1
 	fi
 
 	if [[ $MARKETPLACE_TITLE == '' ]]
 	then
-		echo "MARKETPLACE_URL vairable is not set" 
+		echo "MARKETPLACE_URL variable is not set" 
 		exit 1
 	fi
 }

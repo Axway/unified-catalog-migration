@@ -18,8 +18,7 @@ error=0
 # Input parameters:
 # 1- Platform Oragnization ID
 # 2- Platform Bearer token
-# 3- Stage name
-# 4- catalog item name to migrate (optional)
+# 3- catalog item name to migrate (optional)
 ####################################################
 function migrate() {
 

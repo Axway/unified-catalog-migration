@@ -1,6 +1,6 @@
 # Unified Catalog Migration
 
-Tool for migrating your Unified Catalog items and assets to Marketplace products.
+A tool for migrating your Unified Catalog items and assets to Marketplace products.
 
 The script will:
 
@@ -8,22 +8,22 @@ The script will:
 2. Read all existing catalog items from a specific environment
 3. For each catalog item
     * Find the linked API Service
-    * Create an asset (or use an existing one) and linked it to the API Service
-    * Create a product (if not existing yet) and linked it to the asset created
-    * (Optional) Publish the product to the desire Marketplace
-    * (Optional if product is published) Read existing Active subscription and create the corresponding Marketplace subscription / application if exists
+    * Create an asset (or use an existing one) and link it to the API Service
+    * Create a product (if not existing yet) and link it to the asset created
+    * (Optional) Publish the product to the desired Marketplace
+    * (Optional if product is published) Read existing Active subscription and create the corresponding Marketplace subscription/application if exists
 
-## Pre requisites
+## Prerequisites
 
 * [Axway CLI](https://docs.axway.com/bundle/amplify-central/page/docs/integrate_with_central/cli_central/index.html)
 * [jq](https://jqlang.github.io/jq/)
 * [curl](https://curl.se/)
 
-The script can be run on Microsoft Windows bash shell or on Linux
+The script can be run on Microsoft Windows bash shell or Linux.
 
 ## Configuration
 
-An environment file is available in config directory to setup some properties:
+An environment file is available in the config directory to set some properties:
 
 * _CLIENT_ID_ to use a service account instead of a real user
 * _CLIENT_SECRET_ to set the service account private key.
@@ -33,11 +33,12 @@ An environment file is available in config directory to setup some properties:
 * _PLAN_APPROVAL_MODE_ - automatic (default) or manual
 * _PUBLISH_TO_MARKETPLACES_ to know if products need to be published to Marketplace
 * _MARKETPLACE_TITLE_ to give the Marketplace title where the product needs to be published
-* _ASSET_NAME_FOLLOW_SERVICE_VERSION_ to help naming the Asset based on the APIService name (see Note below)
+* _ASSET_NAME_FOLLOW_SERVICE_VERSION_ to help name the Asset based on the APIService name (see Note below)
 
 Note regarding _ASSET_NAME_FOLLOW_SERVICE_VERSION_:
- When same service (same name) exists in multiple environments, we will create 1 Asset per major service release and only one Product
- For that you need to set _ASSET_NAME_FOLLOW_SERVICE_VERSION=Y_
+ When the same service (i.e. the same name) exists in multiple environments, the script will create 1 Asset per major service release and only one Product.
+ 
+ For that, you need to set _ASSET_NAME_FOLLOW_SERVICE_VERSION=Y_
 
 Sample:
 
@@ -89,23 +90,26 @@ The following table shows how the properties from the Unified Catalog object are
 
 ### Subscription handling
 
-Unified Catalog subscription and Marketplace are different.
-For Unified Catalog there is one subscription per application per Catalog Item
-From the Marketplace it will be translated to one subscription per plan and per application to guarantee that the provider can enforce the quota correct, that is defined in the product plan.
+Unified Catalog subscriptions and Marketplace subscriptions are different.
+
+For the Unified Catalog, there is one subscription per application per Catalog Item.
+
+From the Marketplace this will be translated into one subscription per plan and application to guarantee that the provider can correctly enforce the quota that is defined in the product plan.
 
 ![Alt text](subscription.png)
 
-Due to that, the migration script creates only 1 subscription for each individual resources available in the product. The subscription is reused to add the Access to the various application.
+Due to this difference, the migration script creates only 1 subscription for each resource available in the product. The subscription is reused to add access to the various applications.
 
 **Limitation**:
-On Marketplace side, it is not possible to access the same product resource using a subscription plan having a quota restriction and multiple applications, to help provider to correctly enforce the subscription plan quotas.
-The migration script displays this message `/!\ Cannot add access to {UNIFED_CATAOLOGSUBSCRIPTION_APPLICATION_NAME} using subscription {MARKETPLACE_SUBSCRIPTION_NAME} : access already exist for another application` if multiple applications try to access the same resource using the same subscription.
+On the Marketplace side, it is not possible to access the same product resource using a subscription plan having a quota restriction and multiple applications. This is to help providers correctly enforce the subscription plan quotas.
+
+The migration script displays this message `/!\ Cannot add access to {UNIFED_CATAOLOGSUBSCRIPTION_APPLICATION_NAME} using subscription {MARKETPLACE_SUBSCRIPTION_NAME}: access already exist for another application` if multiple applications try to access the same resource using the same subscription.
 
 You can overcome this by using the unlimited quota variable: `PLAN_QUOTA="unlimited"`
 
 ## Usage
 
-Migrating all catalog item link to an environment:
+Migrating all catalog item links to an environment:
 
 ```bash
 ./migrateUnifiedCatalog.sh
@@ -121,4 +125,4 @@ Migrating a single catalog item link to an environment:
 
 * Tags from the Unified Catalog are not added to the product
 * No product visibility is set based on the catalog item sharing
-* Product can be published in only one Marketplace
+* A product can be published in only one Marketplace

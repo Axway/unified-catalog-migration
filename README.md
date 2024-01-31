@@ -109,7 +109,7 @@ You can overcome this by using the unlimited quota variable: `PLAN_QUOTA="unlimi
 
 ## Usage
 
-Migrating all catalog item links to an environment:
+Migrating all catalog item linked to an environment:
 
 ```bash
 ./migrateUnifiedCatalog.sh

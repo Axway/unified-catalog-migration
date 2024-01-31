@@ -6,7 +6,7 @@ The migration from the Unified Catalog to the Enterprise Marketplace, consists o
 2. Update your agents
 3. Migrate your content
 
-But before you start with the migration, we recommed you get yourself familiarized with the Amplify Enterpise Marketplacem. 
+But before you start with the migration, we recommed you get yourself familiarized with the Amplify Enterpise Marketplace. 
 Please take a moment to watch our Enterpise Marketplace intro tutorial at https://university.axway.com/learn/courses/11665/introduction-to-amplify-enterprise-marketplace. You can also access our documentation at 
 https://docs.axway.com/bundle/amplify-central/page/docs/index.html.
 

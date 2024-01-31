@@ -1,17 +1,17 @@
 # Unified Catalog Migration
 
-A tool for migrating your Unified Catalog items and assets to Marketplace products.
+A tool for migrating your Unified Catalog items and assets to the Amplify Enterprise Marketplace.
 
 The script will:
 
 1. Log into the platform using the `axway auth login` either using the browser or using a service account (if set in the configuration file)
 2. Read all existing catalog items from a specific environment
 3. For each catalog item
-    * Find the linked API Service
-    * Create an asset (or use an existing one) and link it to the API Service
-    * Create a product (if not existing yet) and link it to the asset created
-    * (Optional) Publish the product to the desired Marketplace
-    * (Optional if product is published) Read existing Active subscription and create the corresponding Marketplace subscription/application if exists
+    * Look for the linked API Service
+    * Create a new asset (or use an existing one) that will contain the API Service
+    * Create a new product (if not existing yet) and link it to the asset created
+    * (Optional) Publish the product to the selected Marketplace
+    * (Optional if product is published) Create a corresponding Marketplace subscription and application in the Marketplace for each active catalog item subscription
 
 ## Prerequisites
 
@@ -90,15 +90,13 @@ The following table shows how the properties from the Unified Catalog object are
 
 ### Subscription handling
 
-Unified Catalog subscriptions and Marketplace subscriptions are different.
+There are some core differences between a Unified Catalog subscription and Marketplace subscription.
 
-For the Unified Catalog, there is one subscription per application per Catalog Item.
-
-From the Marketplace this will be translated into one subscription per plan and application to guarantee that the provider can correctly enforce the quota that is defined in the product plan.
+For the Unified Catalog, there is only one subscription allowed per application for a catalog item. In the Marketplace, this will translate to one subscription per product plan, allowing only one application to be registred for a single API resource inside the product, to guarantee that the plan quota can be enforced correctly on the dataplane.
 
 ![Alt text](subscription.png)
 
-Due to this difference, the migration script creates only 1 subscription for each resource available in the product. The subscription is reused to add access to the various applications.
+The migration script will create only 1 subscription that can be used with each resource in the product. This subscription is then used to add access to the various applications.
 
 **Limitation**:
 On the Marketplace side, it is not possible to access the same product resource using a subscription plan having a quota restriction and multiple applications. This is to help providers correctly enforce the subscription plan quotas.
@@ -109,13 +107,13 @@ You can overcome this by using the unlimited quota variable: `PLAN_QUOTA="unlimi
 
 ## Usage
 
-Migrating all catalog item linked to an environment:
+Migrating all catalog items that belong to a specific environment:
 
 ```bash
 ./migrateUnifiedCatalog.sh
 ```
 
-Migrating a single catalog item link to an environment:
+Migrating a single catalog item that belong to a specific environment:
 
 ```bash
 ./migrateUnifiedCatalog.sh "catalogItemTitle"

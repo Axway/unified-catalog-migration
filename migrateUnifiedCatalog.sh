@@ -250,7 +250,7 @@ function migrate() {
 				error_exit "Problem posting product asset list update" "$TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json"
 
 				# activate the product
-				jq -n -f ./jq/product-activation.jq --arg productName $CONSUMER_INSTANCE_TITLE > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json
+				jq -n -f ./jq/product-activation.jq --arg productName $PRODUCT_NAME > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json
 				axway central apply -f $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json -y -o json > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json
 				error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
 
@@ -267,7 +267,7 @@ function migrate() {
 
 					# activate the product
 					echo "			Activate product"
-					jq -n -f ./jq/product-activation.jq --arg productName $CONSUMER_INSTANCE_TITLE > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json
+					jq -n -f ./jq/product-activation.jq --arg productName $PRODUCT_NAME > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json
 					axway central apply -f $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activate.json -y -o json > $TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json
 					error_exit "Problem whie activating product release" "$TEMP_DIR/product-asset-$CONSUMER_INSTANCE_NAME-activated.json"
 

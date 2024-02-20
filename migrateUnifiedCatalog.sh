@@ -55,7 +55,6 @@ function migrate() {
 		CATALOG_APISERVICE=$(echo $line | jq -r '.apiserviceName')
 		CATALOG_APISERVICE_REVISION=$(echo $line | jq -r '.apiserviceRevision')
 		CATALOG_APISERVICEENV=$(echo $line | jq -r '.environment')
-		CATALOG_TAGS=$(echo $line | jq -r '.tags')
 
 		echo "Migrating $CONSUMER_INSTANCE_TITLE catalog item..."
 		echo "Catalog name: $CONSUMER_INSTANCE_NAME / $CONSUMER_INSTANCE_TITLE / apiService=$CATALOG_APISERVICE / apiServiceRevision=$CATALOG_APISERVICE_REVISION"
@@ -137,6 +136,9 @@ function migrate() {
 		else
 			echo "			no categories found!"
 		fi
+
+		echo "		Findings tags..."
+		CATALOG_TAGS=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".tags"`
 
 		# Compute the Asset name based on the APIService version: APISErvice version == X.Y.Z => Asset name == APIService name VX
 		CATALOG_ITEM_VERION=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".latestVersion" `
@@ -308,6 +310,15 @@ function migrate() {
 			then
 				echo "	merging icon with product content..."
 				jq -s '.[0] as $a | .[1] as $b | $a * $b' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json $TEMP_DIR/asset-product-$CONSUMER_INSTANCE_NAME-icon.json  > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json
+				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
+			fi
+
+			# adding tags
+			if [[ $CATALOG_TAGS != "[]" ]]
+			then
+				# replace the default tags: "Migrated from Unified Catalog" with the one coming from the Unified Catalog item.
+				echo "	adding product tags..."
+				jq --slurpfile file2 ./json_files/catalogItemDetails.json '(.tags = $file2[0].tags)' ./json_files/product-petstore-protobuf.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json
 				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
 			fi
 

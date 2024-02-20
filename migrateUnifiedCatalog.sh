@@ -137,9 +137,6 @@ function migrate() {
 			echo "			no categories found!"
 		fi
 
-		echo "		Findings tags..."
-		CATALOG_TAGS=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".tags"`
-
 		# Compute the Asset name based on the APIService version: APISErvice version == X.Y.Z => Asset name == APIService name VX
 		CATALOG_ITEM_VERION=`cat $TEMP_DIR/catalogItemDetails.json | jq -r ".latestVersion" `
 		ASSET_TITLE=$(computeAssetNameFromAPIservice $CONSUMER_INSTANCE_TITLE $CATALOG_ITEM_VERION)
@@ -314,7 +311,7 @@ function migrate() {
 			fi
 
 			# adding tags
-			if [[ $CATALOG_TAGS != "[]" ]]
+			if [[ `cat $TEMP_DIR/catalogItemDetails.json | jq -r ".tags"` != "[]" ]]
 			then
 				# replace the default tags: "Migrated from Unified Catalog" with the one coming from the Unified Catalog item.
 				echo "	adding product tags..."

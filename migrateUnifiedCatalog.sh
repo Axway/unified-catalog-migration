@@ -315,7 +315,7 @@ function migrate() {
 			then
 				# replace the default tags: "Migrated from Unified Catalog" with the one coming from the Unified Catalog item.
 				echo "	adding product tags..."
-				jq --slurpfile file2 ./json_files/catalogItemDetails.json '(.tags = $file2[0].tags)' ./json_files/product-petstore-protobuf.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json
+				jq --slurpfile file2 $TEMP_DIR/catalogItemDetails.json '(.tags = $file2[0].tags)' $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json > $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json 
 				mv $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME-tmp.json $TEMP_DIR/product-$CONSUMER_INSTANCE_NAME.json
 			fi
 

@@ -100,6 +100,7 @@ The following table shows the mapping between Unified Catalog objects and Enterp
 | **CatalogItem (= consumerInstance)** |                      |               |                          |                         |
 |  Image/base64                        | Icon                 | Icon          |                          |                         |
 |  Category(ies)                       |                      | Category(ies) |                          |                         |
+|  Tags                                |                      | Tags          |                          |                         |
 |                                      |                      |               |                          |                         |
 | **CatalogItemDocumentation**         |                      |               |                          |                         |
 |  Value                               |                      | Article       |                          |                         |
@@ -140,6 +141,5 @@ After the migration script is run successfully, you must start the agents again.
 
 ## Known limitations
 
-* Unified catalog item tags are not migrated to the product
 * Catalog item sharing rights does not translate to the product visibility settings
 * A product can be published in only one Marketplace

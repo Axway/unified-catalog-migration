@@ -62,11 +62,12 @@ function migrate() {
 		# Finding corresponding Unified Catalog - multple catalog can have same name but only one is linked to the consumerInstance using the latestVersion attribute
 		echo "	Finding catalog item details..."
 		echo "		Finding ID..."
-		# query format section: query=(name=='VALUE') -> replace ( and ) by their respective HTML value
 		CENTRAL_URL=$(getCentralURL)
-		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE'%27%29' 
-		# replace spaces with %20 in case the Catalog name has some
-		URL=${URL// /%20}
+
+		# encode specific characters (Space, accent...) in case the Catalog name has some
+		CONSUMER_INSTANCE_TITLE_ENCODED=`printf %s "$CONSUMER_INSTANCE_TITLE" | jq -sRr @uri`
+		# query format section: query=(name=='VALUE') -> replace ( and ) by their respective HTML value
+		URL=$CENTRAL_URL'/api/unifiedCatalog/v1/catalogItems?query=%28name==%27'$CONSUMER_INSTANCE_TITLE_ENCODED'%27%29' 
 		curl -s --location --request GET ${URL} --header 'X-Axway-Tenant-Id: '$PLATFORM_ORGID --header 'Authorization: Bearer '$PLATFORM_TOKEN > $TEMP_DIR/catalogItem.json
 
 		# Are there multiple version?
